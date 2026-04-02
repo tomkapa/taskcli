@@ -1,0 +1,5 @@
+- MUST follow SOLID and DRY principle
+- DO NOT swallow error, all error must be handle explicitly
+- Log MUST be riched for debug, use opentelemetry for standard approach
+- Prefer strict type to capture potential error at compile time
+- fmt and lint MUST be run before exit
