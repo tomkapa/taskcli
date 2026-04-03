@@ -18,6 +18,16 @@ const SECTIONS = [
       ['e', 'Edit'],
       ['d', 'Delete'],
       ['s', 'Status cycle'],
+      ['D', 'Dependencies'],
+    ],
+  },
+  {
+    title: 'REORDER',
+    keys: [
+      ['←', 'Enter reorder'],
+      ['↑↓', 'Move task'],
+      ['→', 'Save position'],
+      ['esc/←', 'Cancel'],
     ],
   },
   {
@@ -26,8 +36,16 @@ const SECTIONS = [
       ['/', 'Search'],
       ['f', 'Status filter'],
       ['t', 'Type filter'],
-      ['1-5', 'Priority'],
       ['0', 'Clear filters'],
+    ],
+  },
+  {
+    title: 'DEPS VIEW',
+    keys: [
+      ['a', 'Add blocker'],
+      ['x', 'Remove dep'],
+      ['enter', 'Go to task'],
+      ['esc', 'Back'],
     ],
   },
   {

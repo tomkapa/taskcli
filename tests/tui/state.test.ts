@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { appReducer, initialState } from '../../src/tui/state.js';
-import { ViewType, SortColumn } from '../../src/tui/types.js';
+import { ViewType } from '../../src/tui/types.js';
 import type { Task } from '../../src/types/task.js';
 
 const mockTask: Task = {
@@ -11,7 +11,7 @@ const mockTask: Task = {
   description: 'A test task',
   type: 'story',
   status: 'backlog',
-  priority: 3,
+  rank: 1000,
   technicalNotes: '',
   additionalRequirements: '',
   createdAt: '2024-01-01T00:00:00Z',
@@ -22,6 +22,10 @@ describe('appReducer', () => {
   it('starts with TaskList view and single breadcrumb', () => {
     expect(initialState.activeView).toBe(ViewType.TaskList);
     expect(initialState.breadcrumbs).toEqual([ViewType.TaskList]);
+  });
+
+  it('defaults filter to backlog status', () => {
+    expect(initialState.filter.status).toBe('backlog');
   });
 
   it('NAVIGATE_TO changes view and pushes breadcrumb', () => {
@@ -127,20 +131,20 @@ describe('appReducer', () => {
     });
     const updated = appReducer(withFilter, {
       type: 'SET_FILTER',
-      filter: { priority: 1 },
+      filter: { search: 'test' },
     });
     expect(updated.filter.status).toBe('todo');
     expect(updated.filter.type).toBe('bug');
-    expect(updated.filter.priority).toBe(1);
+    expect(updated.filter.search).toBe('test');
   });
 
-  it('CLEAR_FILTER resets all filters', () => {
+  it('CLEAR_FILTER resets to backlog default', () => {
     const withFilter = appReducer(initialState, {
       type: 'SET_FILTER',
       filter: { status: 'todo', type: 'bug', search: 'hello' },
     });
     const cleared = appReducer(withFilter, { type: 'CLEAR_FILTER' });
-    expect(cleared.filter).toEqual({});
+    expect(cleared.filter).toEqual({ status: 'backlog' });
     expect(cleared.searchQuery).toBe('');
   });
 
@@ -224,42 +228,82 @@ describe('appReducer', () => {
     expect(back.formData).toBeNull();
   });
 
-  it('CYCLE_SORT sets new column with asc direction', () => {
-    const state = appReducer(initialState, {
-      type: 'CYCLE_SORT',
-      column: SortColumn.Status,
+  describe('Reorder', () => {
+    it('ENTER_REORDER enables reorder mode and takes snapshot', () => {
+      const withTasks = appReducer(initialState, {
+        type: 'SET_TASKS',
+        tasks: [mockTask, { ...mockTask, id: 'task-2', rank: 2000 }],
+      });
+      const state = appReducer(withTasks, { type: 'ENTER_REORDER' });
+      expect(state.isReordering).toBe(true);
+      expect(state.reorderSnapshot).toHaveLength(2);
     });
-    expect(state.sort.column).toBe(SortColumn.Status);
-    expect(state.sort.direction).toBe('asc');
-    expect(state.selectedIndex).toBe(0);
-  });
 
-  it('CYCLE_SORT toggles direction on same column', () => {
-    const first = appReducer(initialState, {
-      type: 'CYCLE_SORT',
-      column: SortColumn.Priority,
+    it('REORDER_MOVE swaps tasks and moves cursor', () => {
+      const task2 = { ...mockTask, id: 'task-2', name: 'Task 2', rank: 2000 };
+      let state = appReducer(initialState, {
+        type: 'SET_TASKS',
+        tasks: [mockTask, task2],
+      });
+      state = appReducer(state, { type: 'ENTER_REORDER' });
+
+      // Move down: swap task-1 and task-2
+      const moved = appReducer(state, { type: 'REORDER_MOVE', direction: 'down' });
+      expect(moved.selectedIndex).toBe(1);
+      expect(moved.tasks[0]?.id).toBe('task-2');
+      expect(moved.tasks[1]?.id).toBe('task-1');
     });
-    // initialState already has priority asc, so first cycle toggles to desc
-    expect(first.sort.direction).toBe('desc');
 
-    const second = appReducer(first, {
-      type: 'CYCLE_SORT',
-      column: SortColumn.Priority,
+    it('REORDER_MOVE does nothing at boundaries', () => {
+      const state = appReducer(initialState, {
+        type: 'SET_TASKS',
+        tasks: [mockTask],
+      });
+      const reordering = appReducer(state, { type: 'ENTER_REORDER' });
+
+      const movedUp = appReducer(reordering, { type: 'REORDER_MOVE', direction: 'up' });
+      expect(movedUp.selectedIndex).toBe(0);
+
+      const movedDown = appReducer(reordering, { type: 'REORDER_MOVE', direction: 'down' });
+      expect(movedDown.selectedIndex).toBe(0);
     });
-    expect(second.sort.direction).toBe('asc');
-  });
 
-  it('CYCLE_SORT resets cursor on column change', () => {
-    const withIndex = { ...initialState, selectedIndex: 5 };
-    const state = appReducer(withIndex, {
-      type: 'CYCLE_SORT',
-      column: SortColumn.Type,
+    it('EXIT_REORDER with save=false reverts to snapshot', () => {
+      const task2 = { ...mockTask, id: 'task-2', name: 'Task 2', rank: 2000 };
+      let state = appReducer(initialState, {
+        type: 'SET_TASKS',
+        tasks: [mockTask, task2],
+      });
+      state = appReducer(state, { type: 'ENTER_REORDER' });
+      state = appReducer(state, { type: 'REORDER_MOVE', direction: 'down' });
+
+      const reverted = appReducer(state, { type: 'EXIT_REORDER', save: false });
+      expect(reverted.isReordering).toBe(false);
+      expect(reverted.tasks[0]?.id).toBe('task-1');
     });
-    expect(state.selectedIndex).toBe(0);
-  });
 
-  it('initial sort is priority asc', () => {
-    expect(initialState.sort.column).toBe(SortColumn.Priority);
-    expect(initialState.sort.direction).toBe('asc');
+    it('EXIT_REORDER with save=true keeps new order', () => {
+      const task2 = { ...mockTask, id: 'task-2', name: 'Task 2', rank: 2000 };
+      let state = appReducer(initialState, {
+        type: 'SET_TASKS',
+        tasks: [mockTask, task2],
+      });
+      state = appReducer(state, { type: 'ENTER_REORDER' });
+      state = appReducer(state, { type: 'REORDER_MOVE', direction: 'down' });
+
+      const saved = appReducer(state, { type: 'EXIT_REORDER', save: true });
+      expect(saved.isReordering).toBe(false);
+      expect(saved.tasks[0]?.id).toBe('task-2');
+      expect(saved.reorderSnapshot).toBeNull();
+    });
+
+    it('REORDER_MOVE is no-op when not reordering', () => {
+      const state = appReducer(initialState, {
+        type: 'SET_TASKS',
+        tasks: [mockTask, { ...mockTask, id: 'task-2', rank: 2000 }],
+      });
+      const moved = appReducer(state, { type: 'REORDER_MOVE', direction: 'down' });
+      expect(moved.tasks[0]?.id).toBe('task-1');
+    });
   });
 });

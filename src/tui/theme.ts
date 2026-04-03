@@ -12,6 +12,8 @@ export const theme = {
     cursorBg: '#00FFFF', // aqua
     headerFg: 'white',
     markColor: '#98FB98', // palegreen
+    depHighlightBg: '#1A5276', // dark steel blue – non-terminal dep rows
+    blockedCursorBg: '#C0392B', // strong red – selected row blocked by non-terminal dep
   },
 
   // Status colors (row-level)

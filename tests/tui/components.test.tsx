@@ -12,9 +12,9 @@ import { FlashMessage } from '../../src/tui/components/FlashMessage.js';
 import { HelpOverlay } from '../../src/tui/components/HelpOverlay.js';
 import { ConfirmDialog } from '../../src/tui/components/ConfirmDialog.js';
 import { Markdown } from '../../src/tui/components/Markdown.js';
-import { StatusBadge, TypeBadge, PriorityBadge } from '../../src/tui/components/Badges.js';
+import { StatusBadge, TypeBadge } from '../../src/tui/components/Badges.js';
 import { initialState } from '../../src/tui/state.js';
-import { ViewType, SortColumn } from '../../src/tui/types.js';
+import { ViewType } from '../../src/tui/types.js';
 
 const mockTask: Task = {
   id: '01ABC123',
@@ -24,7 +24,7 @@ const mockTask: Task = {
   description: 'Login fails on **mobile** devices',
   type: 'bug',
   status: 'in-progress',
-  priority: 1,
+  rank: 1000,
   technicalNotes: '## Root cause\nJWT token expiry not checked',
   additionalRequirements: 'Must work on iOS Safari',
   createdAt: '2024-01-15T10:00:00Z',
@@ -33,6 +33,7 @@ const mockTask: Task = {
 
 const mockProject: Project = {
   id: 'proj-1',
+  key: 'MYA',
   name: 'My App',
   description: 'Main application',
   isDefault: true,
@@ -50,11 +51,6 @@ describe('TUI Component Rendering', () => {
     it('renders TypeBadge without crashing', () => {
       const { lastFrame } = render(<TypeBadge type="bug" />);
       expect(lastFrame()).toContain('bug');
-    });
-
-    it('renders PriorityBadge without crashing', () => {
-      const { lastFrame } = render(<PriorityBadge priority={1} />);
-      expect(lastFrame()).toContain('P1');
     });
   });
 
@@ -105,8 +101,8 @@ describe('TUI Component Rendering', () => {
           selectedIndex={0}
           searchQuery=""
           isSearchActive={false}
+          isReordering={false}
           filter={{}}
-          sort={{ column: SortColumn.Priority, direction: 'asc' }}
           activeProjectName="My App"
         />,
       );
@@ -123,8 +119,8 @@ describe('TUI Component Rendering', () => {
           selectedIndex={0}
           searchQuery=""
           isSearchActive={false}
+          isReordering={false}
           filter={{}}
-          sort={{ column: SortColumn.Priority, direction: 'asc' }}
           activeProjectName="My App"
         />,
       );
@@ -138,8 +134,8 @@ describe('TUI Component Rendering', () => {
           selectedIndex={0}
           searchQuery="login"
           isSearchActive={true}
+          isReordering={false}
           filter={{}}
-          sort={{ column: SortColumn.Priority, direction: 'asc' }}
           activeProjectName="My App"
         />,
       );
@@ -153,8 +149,8 @@ describe('TUI Component Rendering', () => {
           selectedIndex={0}
           searchQuery=""
           isSearchActive={false}
+          isReordering={false}
           filter={{ status: 'todo', type: 'bug' }}
-          sort={{ column: SortColumn.Priority, direction: 'asc' }}
           activeProjectName="My App"
         />,
       );
@@ -166,7 +162,7 @@ describe('TUI Component Rendering', () => {
     it('renders multiple tasks with selection indicator', () => {
       const tasks = [
         mockTask,
-        { ...mockTask, id: 'task-2', name: 'Add dashboard', type: 'story' as const, status: 'todo' as const, priority: 2 },
+        { ...mockTask, id: 'task-2', name: 'Add dashboard', type: 'story' as const, status: 'todo' as const, rank: 2000 },
       ];
       const { lastFrame } = render(
         <TaskList
@@ -174,14 +170,30 @@ describe('TUI Component Rendering', () => {
           selectedIndex={0}
           searchQuery=""
           isSearchActive={false}
+          isReordering={false}
           filter={{}}
-          sort={{ column: SortColumn.Priority, direction: 'asc' }}
           activeProjectName="My App"
         />,
       );
       const frame = lastFrame() ?? '';
       expect(frame).toContain('Fix login bug');
       expect(frame).toContain('Add dashboard');
+    });
+
+    it('renders reorder indicator when reordering', () => {
+      const { lastFrame } = render(
+        <TaskList
+          tasks={[mockTask]}
+          selectedIndex={0}
+          searchQuery=""
+          isSearchActive={false}
+          isReordering={true}
+          filter={{}}
+          activeProjectName="My App"
+        />,
+      );
+      const frame = lastFrame() ?? '';
+      expect(frame).toContain('REORDER');
     });
   });
 
@@ -215,7 +227,6 @@ describe('TUI Component Rendering', () => {
       const frame = lastFrame() ?? '';
       expect(frame).toContain('type');
       expect(frame).toContain('status');
-      expect(frame).toContain('priority');
     });
   });
 
@@ -229,7 +240,6 @@ describe('TUI Component Rendering', () => {
       expect(frame).toContain('Name');
       expect(frame).toContain('Type');
       expect(frame).toContain('Status');
-      expect(frame).toContain('Priority');
       expect(frame).toContain('ctrl+s: save');
     });
 
@@ -346,6 +356,7 @@ describe('TUI Component Rendering', () => {
       expect(frame).toContain('Help');
       expect(frame).toContain('NAVIGATION');
       expect(frame).toContain('ACTIONS');
+      expect(frame).toContain('REORDER');
       expect(frame).toContain('FILTER');
       expect(frame).toContain('GENERAL');
       expect(frame).toContain('Press any key to close');

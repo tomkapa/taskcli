@@ -10,6 +10,14 @@ import { registerTaskShow } from './commands/task/show.js';
 import { registerTaskUpdate } from './commands/task/update.js';
 import { registerTaskDelete } from './commands/task/delete.js';
 import { registerTaskBreakdown } from './commands/task/breakdown.js';
+import { registerTaskRank } from './commands/task/rank.js';
+import { registerTaskSearch } from './commands/task/search.js';
+import { registerTaskExport } from './commands/task/export.js';
+import { registerTaskImport } from './commands/task/import.js';
+import { registerDepAdd } from './commands/dep/add.js';
+import { registerDepRemove } from './commands/dep/remove.js';
+import { registerDepList } from './commands/dep/list.js';
+import { registerDepGraph } from './commands/dep/graph.js';
 
 export function buildCLI(container: Container): Command {
   const program = new Command();
@@ -31,6 +39,16 @@ export function buildCLI(container: Container): Command {
   registerTaskUpdate(task, container);
   registerTaskDelete(task, container);
   registerTaskBreakdown(task, container);
+  registerTaskRank(task, container);
+  registerTaskSearch(task, container);
+  registerTaskExport(task, container);
+  registerTaskImport(task, container);
+
+  const dep = program.command('dep').description('Manage task dependencies');
+  registerDepAdd(dep, container);
+  registerDepRemove(dep, container);
+  registerDepList(dep, container);
+  registerDepGraph(dep, container);
 
   program
     .command('tui')

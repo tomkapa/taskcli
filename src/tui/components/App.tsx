@@ -1,10 +1,12 @@
-import { useReducer, useEffect, useCallback } from 'react';
-import { Box, useInput, useApp } from 'ink';
+import { useReducer, useEffect, useCallback, useMemo } from 'react';
+import { Box, Text, useInput, useApp } from 'ink';
 import type { Container } from '../../cli/container.js';
-import { TaskStatus, TaskType } from '../../types/enums.js';
-import type { Task } from '../../types/task.js';
-import { ViewType, SortColumn } from '../types.js';
+import { TaskStatus, TaskType, isTerminalStatus } from '../../types/enums.js';
+import type { Task, DependencyEntry } from '../../types/task.js';
+import type { Project } from '../../types/project.js';
+import { ViewType } from '../types.js';
 import { appReducer, initialState } from '../state.js';
+import { STATUS_VALUES, TYPE_VALUES } from '../constants.js';
 import { Header } from './Header.js';
 import { Crumbs } from './Crumbs.js';
 import { FlashMessage } from './FlashMessage.js';
@@ -12,26 +14,26 @@ import { TaskList } from './TaskList.js';
 import { TaskDetail } from './TaskDetail.js';
 import { TaskForm } from './TaskForm.js';
 import { ProjectSelector } from './ProjectSelector.js';
+import { ProjectForm } from './ProjectForm.js';
 import { HelpOverlay } from './HelpOverlay.js';
 import { ConfirmDialog } from './ConfirmDialog.js';
+import { DependencyList } from './DependencyList.js';
 import { openAllMermaidDiagrams } from './Markdown.js';
+import { theme } from '../theme.js';
 import { logger } from '../../logging/logger.js';
 
 interface Props {
   container: Container;
-  initialProject?: string;
+  initialProject?: string | undefined;
 }
 
-const STATUS_CYCLE = [
+const STATUS_CYCLE: TaskStatus[] = [
   TaskStatus.Backlog,
   TaskStatus.Todo,
   TaskStatus.InProgress,
   TaskStatus.Review,
   TaskStatus.Done,
 ];
-
-const STATUS_VALUES = Object.values(TaskStatus);
-const TYPE_VALUES = Object.values(TaskType);
 
 export function App({ container, initialProject }: Props) {
   const { exit } = useApp();
@@ -40,8 +42,10 @@ export function App({ container, initialProject }: Props) {
   const loadProjects = useCallback(() => {
     const result = container.projectService.listProjects();
     if (result.ok) {
+      logger.info(`TUI.loadProjects: loaded ${result.value.length} projects`);
       dispatch({ type: 'SET_PROJECTS', projects: result.value });
     } else {
+      logger.error('TUI.loadProjects: failed', result.error);
       dispatch({ type: 'FLASH', message: result.error.message, level: 'error' });
     }
   }, [container]);
@@ -54,18 +58,56 @@ export function App({ container, initialProject }: Props) {
       }
       const result = container.taskService.listTasks(filter);
       if (result.ok) {
+        logger.info(`TUI.loadTasks: loaded ${result.value.length} tasks`);
         dispatch({ type: 'SET_TASKS', tasks: result.value });
       } else {
+        logger.error('TUI.loadTasks: failed', result.error);
         dispatch({ type: 'FLASH', message: result.error.message, level: 'error' });
       }
     });
   }, [container, state.filter, state.activeProject]);
+
+  const loadDeps = useCallback(
+    (taskId: string) => {
+      const blockersResult = container.dependencyService.listBlockers(taskId);
+      const dependentsResult = container.dependencyService.listDependents(taskId);
+      const relatedResult = container.dependencyService.listRelated(taskId);
+      const duplicatesResult = container.dependencyService.listDuplicates(taskId);
+      dispatch({
+        type: 'SET_DEPS',
+        blockers: blockersResult.ok ? blockersResult.value : [],
+        dependents: dependentsResult.ok ? dependentsResult.value : [],
+        related: relatedResult.ok ? relatedResult.value : [],
+        duplicates: duplicatesResult.ok ? duplicatesResult.value : [],
+      });
+    },
+    [container],
+  );
 
   const cycleStatus = useCallback(
     (task: Task) => {
       const currentIndex = STATUS_CYCLE.indexOf(task.status);
       const nextStatus = STATUS_CYCLE[(currentIndex + 1) % STATUS_CYCLE.length];
       if (!nextStatus) return;
+
+      // Block transition to in-progress when non-terminal blockers exist
+      if (nextStatus === TaskStatus.InProgress) {
+        const blockersResult = container.dependencyService.listBlockers(task.id);
+        if (blockersResult.ok) {
+          const hasNonTerminalBlocker = blockersResult.value.some(
+            (b) => !isTerminalStatus(b.status),
+          );
+          if (hasNonTerminalBlocker) {
+            dispatch({
+              type: 'FLASH',
+              message: 'Task is blocked by unfinished dependencies',
+              level: 'error',
+            });
+            return;
+          }
+        }
+      }
+
       const result = container.taskService.updateTask(task.id, { status: nextStatus });
       if (result.ok) {
         dispatch({ type: 'FLASH', message: `Status -> ${nextStatus}`, level: 'info' });
@@ -80,6 +122,31 @@ export function App({ container, initialProject }: Props) {
     [container, state.selectedTask, loadTasks],
   );
 
+  const saveReorder = useCallback(() => {
+    const tasks = state.tasks;
+    const idx = state.selectedIndex;
+    const task = tasks[idx];
+    if (!task) return;
+
+    const prev = tasks[idx - 1];
+    const next = tasks[idx + 1];
+
+    // Use after/before positioning so the service computes the rank
+    const result = prev
+      ? container.taskService.rerankTask({ taskId: task.id, afterId: prev.id })
+      : next
+        ? container.taskService.rerankTask({ taskId: task.id, beforeId: next.id })
+        : container.taskService.rerankTask({ taskId: task.id, position: 1 });
+
+    dispatch({ type: 'EXIT_REORDER', save: result.ok });
+    dispatch({
+      type: 'FLASH',
+      message: result.ok ? 'Rank saved' : result.error.message,
+      level: result.ok ? 'info' : 'error',
+    });
+    loadTasks();
+  }, [container, state.tasks, state.selectedIndex, loadTasks]);
+
   // Initial load
   useEffect(() => {
     loadProjects();
@@ -88,11 +155,18 @@ export function App({ container, initialProject }: Props) {
   // Resolve initial project
   useEffect(() => {
     if (state.projects.length > 0 && !state.activeProject) {
+      logger.info(`TUI.resolveProject: resolving initialProject=${initialProject ?? '(default)'}`);
       const result = container.projectService.resolveProject(initialProject);
       if (result.ok) {
+        logger.info(
+          `TUI.resolveProject: resolved to key=${result.value.key} name=${result.value.name}`,
+        );
         dispatch({ type: 'SET_ACTIVE_PROJECT', project: result.value });
-      } else if (state.projects.length > 0) {
-        dispatch({ type: 'SET_ACTIVE_PROJECT', project: state.projects[0] ?? null });
+      } else {
+        logger.error('TUI.resolveProject: failed', result.error);
+        const fallback = state.projects[0] ?? null;
+        logger.info(`TUI.resolveProject: falling back to ${fallback?.name ?? 'null'}`);
+        dispatch({ type: 'SET_ACTIVE_PROJECT', project: fallback });
       }
     }
   }, [state.projects, state.activeProject, initialProject, container]);
@@ -150,8 +224,58 @@ export function App({ container, initialProject }: Props) {
     if (
       state.activeView === ViewType.TaskCreate ||
       state.activeView === ViewType.TaskEdit ||
-      state.activeView === ViewType.ProjectSelector
+      state.activeView === ViewType.ProjectSelector ||
+      state.activeView === ViewType.ProjectCreate
     ) {
+      return;
+    }
+
+    // Dep add-input mode: handle inline then return
+    if (state.activeView === ViewType.DependencyList && state.isAddingDep) {
+      if (key.escape) {
+        dispatch({ type: 'SET_ADDING_DEP', active: false });
+        return;
+      }
+      if (key.return && state.addDepInput.trim() && state.selectedTask) {
+        // Format: "TASK-ID" or "TASK-ID:relates-to" or "TASK-ID:duplicates"
+        const raw = state.addDepInput.trim();
+        const colonIdx = raw.lastIndexOf(':');
+        const validTypes = new Set(['blocks', 'relates-to', 'duplicates']);
+        let depId: string;
+        let depType: string | undefined;
+        if (colonIdx > 0) {
+          const maybetype = raw.slice(colonIdx + 1);
+          if (validTypes.has(maybetype)) {
+            depId = raw.slice(0, colonIdx);
+            depType = maybetype;
+          } else {
+            depId = raw;
+          }
+        } else {
+          depId = raw;
+        }
+        const result = container.dependencyService.addDependency({
+          taskId: state.selectedTask.id,
+          dependsOnId: depId,
+          type: depType,
+        });
+        if (result.ok) {
+          dispatch({ type: 'FLASH', message: 'Dependency added', level: 'info' });
+          loadDeps(state.selectedTask.id);
+        } else {
+          dispatch({ type: 'FLASH', message: result.error.message, level: 'error' });
+        }
+        dispatch({ type: 'SET_ADDING_DEP', active: false });
+        return;
+      }
+      if (key.backspace || key.delete) {
+        dispatch({ type: 'SET_ADD_DEP_INPUT', input: state.addDepInput.slice(0, -1) });
+        return;
+      }
+      if (input && !key.ctrl && !key.meta) {
+        dispatch({ type: 'SET_ADD_DEP_INPUT', input: state.addDepInput + input });
+        return;
+      }
       return;
     }
 
@@ -179,12 +303,39 @@ export function App({ container, initialProject }: Props) {
       return;
     }
 
+    // Reorder mode
+    if (state.isReordering) {
+      if (key.upArrow || input === 'k') {
+        dispatch({ type: 'REORDER_MOVE', direction: 'up' });
+        return;
+      }
+      if (key.downArrow || input === 'j') {
+        dispatch({ type: 'REORDER_MOVE', direction: 'down' });
+        return;
+      }
+      if (key.rightArrow) {
+        saveReorder();
+        return;
+      }
+      if (key.escape || key.leftArrow) {
+        dispatch({ type: 'EXIT_REORDER', save: false });
+        dispatch({ type: 'FLASH', message: 'Reorder cancelled', level: 'info' });
+        return;
+      }
+      return;
+    }
+
     // Global
-    if (input === 'q' && state.activeView === ViewType.TaskList) {
+    if (input === 'q' && state.activeView === ViewType.TaskList && state.focusedPanel === 'list') {
       exit();
       return;
     }
     if (input === 'q' || key.escape) {
+      // In split view with detail focused: escape/q returns focus to list
+      if (state.activeView === ViewType.TaskList && state.focusedPanel === 'detail') {
+        dispatch({ type: 'SET_PANEL_FOCUS', panel: 'list' });
+        return;
+      }
       dispatch({ type: 'GO_BACK' });
       return;
     }
@@ -193,8 +344,17 @@ export function App({ container, initialProject }: Props) {
       return;
     }
 
-    // Task List
-    if (state.activeView === ViewType.TaskList) {
+    // Tab: toggle panel focus in split view
+    if (key.tab && state.activeView === ViewType.TaskList && previewTask) {
+      dispatch({
+        type: 'SET_PANEL_FOCUS',
+        panel: state.focusedPanel === 'list' ? 'detail' : 'list',
+      });
+      return;
+    }
+
+    // Task List — list panel focused
+    if (state.activeView === ViewType.TaskList && state.focusedPanel === 'list') {
       if (key.upArrow || input === 'k') {
         dispatch({ type: 'MOVE_CURSOR', direction: 'up' });
         return;
@@ -205,21 +365,18 @@ export function App({ container, initialProject }: Props) {
       }
       // g = go to top, G = go to bottom
       if (input === 'g') {
-        for (let i = 0; i < state.tasks.length; i++) {
-          dispatch({ type: 'MOVE_CURSOR', direction: 'up' });
-        }
+        dispatch({ type: 'SET_CURSOR', index: 0 });
         return;
       }
       if (input === 'G') {
-        for (let i = 0; i < state.tasks.length; i++) {
-          dispatch({ type: 'MOVE_CURSOR', direction: 'down' });
-        }
+        dispatch({ type: 'SET_CURSOR', index: state.tasks.length - 1 });
         return;
       }
       if (key.return) {
         const task = state.tasks[state.selectedIndex];
         if (task) {
           dispatch({ type: 'SELECT_TASK', task });
+          loadDeps(task.id);
           dispatch({ type: 'NAVIGATE_TO', view: ViewType.TaskDetail });
         }
         return;
@@ -259,22 +416,19 @@ export function App({ container, initialProject }: Props) {
         dispatch({ type: 'NAVIGATE_TO', view: ViewType.ProjectSelector });
         return;
       }
-      if (input === 'S') {
-        // Cycle sort column: priority -> status -> type -> name -> priority
-        const order: SortColumn[] = [
-          SortColumn.Priority,
-          SortColumn.Status,
-          SortColumn.Type,
-          SortColumn.Name,
-        ];
-        const currentIdx = order.indexOf(state.sort.column);
-        const nextCol = order[(currentIdx + 1) % order.length] ?? SortColumn.Priority;
-        dispatch({ type: 'CYCLE_SORT', column: nextCol });
+      // Left arrow: enter reorder mode
+      if (key.leftArrow) {
+        if (state.tasks.length > 0) {
+          dispatch({ type: 'ENTER_REORDER' });
+          dispatch({ type: 'FLASH', message: 'Reorder: ↑↓ move, → save, ← cancel', level: 'info' });
+        }
         return;
       }
       if (input === 'f') {
         const currentStatus = state.filter.status;
-        const currentIndex = currentStatus ? STATUS_VALUES.indexOf(currentStatus) : -1;
+        const currentIndex = currentStatus
+          ? STATUS_VALUES.indexOf(currentStatus as TaskStatus)
+          : -1;
         const nextIndex = currentIndex + 1;
         const nextStatus = nextIndex < STATUS_VALUES.length ? STATUS_VALUES[nextIndex] : undefined;
         dispatch({ type: 'SET_FILTER', filter: { status: nextStatus } });
@@ -282,7 +436,7 @@ export function App({ container, initialProject }: Props) {
       }
       if (input === 't') {
         const currentType = state.filter.type;
-        const currentIndex = currentType ? TYPE_VALUES.indexOf(currentType) : -1;
+        const currentIndex = currentType ? TYPE_VALUES.indexOf(currentType as TaskType) : -1;
         const nextIndex = currentIndex + 1;
         const nextType = nextIndex < TYPE_VALUES.length ? TYPE_VALUES[nextIndex] : undefined;
         dispatch({ type: 'SET_FILTER', filter: { type: nextType } });
@@ -292,18 +446,44 @@ export function App({ container, initialProject }: Props) {
         dispatch({ type: 'CLEAR_FILTER' });
         return;
       }
-      if (input && /^[1-5]$/.test(input)) {
-        const priority = parseInt(input, 10);
-        const current = state.filter.priority;
-        dispatch({
-          type: 'SET_FILTER',
-          filter: { priority: current === priority ? undefined : priority },
-        });
+    }
+
+    // Task List — detail panel focused (preview task shortcuts)
+    if (state.activeView === ViewType.TaskList && state.focusedPanel === 'detail' && previewTask) {
+      if (input === 'e') {
+        dispatch({ type: 'SELECT_TASK', task: previewTask });
+        dispatch({ type: 'NAVIGATE_TO', view: ViewType.TaskEdit });
+        return;
+      }
+      if (input === 'd') {
+        dispatch({ type: 'CONFIRM_DELETE', task: previewTask });
+        return;
+      }
+      if (input === 's') {
+        cycleStatus(previewTask);
+        return;
+      }
+      if (input === 'm') {
+        const allText = `${previewTask.description}\n${previewTask.technicalNotes}\n${previewTask.additionalRequirements}`;
+        const count = openAllMermaidDiagrams(allText);
+        if (count > 0) {
+          dispatch({
+            type: 'FLASH',
+            message: `Opened ${count} diagram${count > 1 ? 's' : ''} in browser`,
+            level: 'info',
+          });
+        }
+        return;
+      }
+      if (input === 'D') {
+        dispatch({ type: 'SELECT_TASK', task: previewTask });
+        loadDeps(previewTask.id);
+        dispatch({ type: 'NAVIGATE_TO', view: ViewType.DependencyList });
         return;
       }
     }
 
-    // Task Detail
+    // Task Detail (full-screen)
     if (state.activeView === ViewType.TaskDetail) {
       if (input === 'e' && state.selectedTask) {
         dispatch({ type: 'NAVIGATE_TO', view: ViewType.TaskEdit });
@@ -329,6 +509,89 @@ export function App({ container, initialProject }: Props) {
         }
         return;
       }
+      if (input === 'D' && state.selectedTask) {
+        loadDeps(state.selectedTask.id);
+        dispatch({ type: 'NAVIGATE_TO', view: ViewType.DependencyList });
+        return;
+      }
+    }
+
+    // Dependency List (non-adding mode — adding is handled above)
+    if (state.activeView === ViewType.DependencyList && state.selectedTask) {
+      if (key.upArrow || input === 'k') {
+        dispatch({ type: 'DEP_MOVE_CURSOR', direction: 'up' });
+        return;
+      }
+      if (key.downArrow || input === 'j') {
+        dispatch({ type: 'DEP_MOVE_CURSOR', direction: 'down' });
+        return;
+      }
+      if (input === 'a') {
+        dispatch({ type: 'SET_ADDING_DEP', active: true });
+        return;
+      }
+      if (input === 'x') {
+        const allItems = [
+          ...state.depBlockers,
+          ...state.depDependents,
+          ...state.depRelated,
+          ...state.depDuplicates,
+        ];
+        const selected = allItems[state.depSelectedIndex];
+        if (selected) {
+          const idx = state.depSelectedIndex;
+          const blockersEnd = state.depBlockers.length;
+          const dependentsEnd = blockersEnd + state.depDependents.length;
+          // Blockers: selectedTask depends on selected (task_id=selectedTask, depends_on_id=selected)
+          // Dependents: selected depends on selectedTask (task_id=selected, depends_on_id=selectedTask)
+          // Related/Duplicates: stored in either direction — try both
+          const result = idx < blockersEnd
+            ? container.dependencyService.removeDependency({
+                taskId: state.selectedTask.id,
+                dependsOnId: selected.id,
+              })
+            : idx < dependentsEnd
+            ? container.dependencyService.removeDependency({
+                taskId: selected.id,
+                dependsOnId: state.selectedTask.id,
+              })
+            : (() => {
+                const r = container.dependencyService.removeDependency({
+                  taskId: state.selectedTask.id,
+                  dependsOnId: selected.id,
+                });
+                if (!r.ok) {
+                  return container.dependencyService.removeDependency({
+                    taskId: selected.id,
+                    dependsOnId: state.selectedTask.id,
+                  });
+                }
+                return r;
+              })();
+          if (result.ok) {
+            dispatch({ type: 'FLASH', message: 'Dependency removed', level: 'info' });
+            loadDeps(state.selectedTask.id);
+          } else {
+            dispatch({ type: 'FLASH', message: result.error.message, level: 'error' });
+          }
+        }
+        return;
+      }
+      if (key.return) {
+        const allItems = [
+          ...state.depBlockers,
+          ...state.depDependents,
+          ...state.depRelated,
+          ...state.depDuplicates,
+        ];
+        const selected = allItems[state.depSelectedIndex];
+        if (selected) {
+          dispatch({ type: 'SELECT_TASK', task: selected });
+          loadDeps(selected.id);
+          dispatch({ type: 'NAVIGATE_TO', view: ViewType.TaskDetail });
+        }
+        return;
+      }
     }
   });
 
@@ -338,9 +601,9 @@ export function App({ container, initialProject }: Props) {
       description: string;
       type: string;
       status: string;
-      priority: number;
       technicalNotes: string;
       additionalRequirements: string;
+      dependsOn?: DependencyEntry[];
     }) => {
       if (state.activeView === ViewType.TaskEdit && state.selectedTask) {
         const result = container.taskService.updateTask(state.selectedTask.id, data);
@@ -370,25 +633,68 @@ export function App({ container, initialProject }: Props) {
     dispatch({ type: 'GO_BACK' });
   }, []);
 
-  const handleProjectSelect = useCallback(
-    (project: {
-      id: string;
-      name: string;
-      description: string;
-      isDefault: boolean;
-      createdAt: string;
-      updatedAt: string;
-    }) => {
-      dispatch({ type: 'SET_ACTIVE_PROJECT', project });
-      dispatch({ type: 'GO_BACK' });
-      dispatch({ type: 'FLASH', message: `Switched to: ${project.name}`, level: 'info' });
+  const handleProjectSelect = useCallback((project: Project) => {
+    dispatch({ type: 'SET_ACTIVE_PROJECT', project });
+    dispatch({ type: 'GO_BACK' });
+    dispatch({ type: 'FLASH', message: `Switched to: ${project.name}`, level: 'info' });
+  }, []);
+
+  const handleProjectCreate = useCallback(() => {
+    dispatch({ type: 'NAVIGATE_TO', view: ViewType.ProjectCreate });
+  }, []);
+
+  const handleProjectFormSave = useCallback(
+    (data: { name: string; key: string; description: string; isDefault: boolean }) => {
+      const result = container.projectService.createProject({
+        name: data.name,
+        key: data.key || undefined,
+        description: data.description || undefined,
+        isDefault: data.isDefault,
+      });
+      if (result.ok) {
+        logger.info(`TUI.createProject: created key=${result.value.key} name=${result.value.name}`);
+        dispatch({
+          type: 'FLASH',
+          message: `Project created: ${result.value.name}`,
+          level: 'info',
+        });
+        dispatch({ type: 'SET_ACTIVE_PROJECT', project: result.value });
+        // Go back past ProjectCreate and ProjectSelector to TaskList
+        dispatch({ type: 'GO_BACK' });
+        dispatch({ type: 'GO_BACK' });
+        loadProjects();
+      } else {
+        logger.error('TUI.createProject: failed', result.error);
+        dispatch({ type: 'FLASH', message: result.error.message, level: 'error' });
+      }
     },
-    [],
+    [container, loadProjects],
   );
+
+  const handleProjectFormCancel = useCallback(() => {
+    dispatch({ type: 'GO_BACK' });
+  }, []);
 
   const handleProjectCancel = useCallback(() => {
     dispatch({ type: 'GO_BACK' });
   }, []);
+
+  const previewTask = state.tasks[state.selectedIndex] ?? null;
+
+  // All project tasks (unfiltered) for the dependency picker
+  const allProjectTasks = useMemo(() => {
+    if (!state.activeProject) return [];
+    const result = container.taskService.listTasks({ projectId: state.activeProject.id });
+    return result.ok ? result.value : [];
+  }, [container, state.activeProject]);
+  const previewTaskId = previewTask?.id ?? null;
+
+  // Load deps for the preview pane when selection changes (track ID, not object reference)
+  useEffect(() => {
+    if (state.activeView === ViewType.TaskList && previewTaskId) {
+      loadDeps(previewTaskId);
+    }
+  }, [state.activeView, previewTaskId, loadDeps]);
 
   return (
     <Box flexDirection="column" height="100%">
@@ -400,25 +706,90 @@ export function App({ container, initialProject }: Props) {
         {state.confirmDelete && <ConfirmDialog task={state.confirmDelete} />}
 
         {!state.confirmDelete && state.activeView === ViewType.TaskList && (
-          <TaskList
-            tasks={state.tasks}
-            selectedIndex={state.selectedIndex}
-            searchQuery={state.searchQuery}
-            isSearchActive={state.isSearchActive}
-            filter={state.filter}
-            sort={state.sort}
-            activeProjectName={state.activeProject?.name ?? 'none'}
-          />
+          <Box flexDirection="row" flexGrow={1}>
+            <Box width="50%">
+              <TaskList
+                tasks={state.tasks}
+                selectedIndex={state.selectedIndex}
+                searchQuery={state.searchQuery}
+                isSearchActive={state.isSearchActive}
+                isReordering={state.isReordering}
+                filter={state.filter}
+                activeProjectName={state.activeProject?.name ?? 'none'}
+                nonTerminalBlockerIds={
+                  new Set(
+                    state.depBlockers.filter((t) => !isTerminalStatus(t.status)).map((t) => t.id),
+                  )
+                }
+                nonTerminalDependentIds={
+                  new Set(
+                    state.depDependents
+                      .filter((t) => !isTerminalStatus(t.status))
+                      .map((t) => t.id),
+                  )
+                }
+                isSelectedBlocked={state.depBlockers.some((t) => !isTerminalStatus(t.status))}
+                isFocused={state.focusedPanel === 'list'}
+              />
+            </Box>
+            <Box flexGrow={1}>
+              {previewTask ? (
+                <TaskDetail
+                  task={previewTask}
+                  blockers={state.depBlockers}
+                  dependents={state.depDependents}
+                  isFocused={state.focusedPanel === 'detail'}
+                />
+              ) : (
+                <Box
+                  flexDirection="column"
+                  flexGrow={1}
+                  borderStyle="bold"
+                  borderColor={theme.border}
+                >
+                  <Box>
+                    <Text color={theme.title} bold>
+                      {' '}
+                      detail
+                    </Text>
+                  </Box>
+                  <Box flexGrow={1} justifyContent="center" alignItems="center">
+                    <Text dimColor>No task selected</Text>
+                  </Box>
+                </Box>
+              )}
+            </Box>
+          </Box>
         )}
 
         {!state.confirmDelete && state.activeView === ViewType.TaskDetail && state.selectedTask && (
-          <TaskDetail task={state.selectedTask} />
+          <TaskDetail
+            task={state.selectedTask}
+            blockers={state.depBlockers}
+            dependents={state.depDependents}
+          />
         )}
+
+        {!state.confirmDelete &&
+          state.activeView === ViewType.DependencyList &&
+          state.selectedTask && (
+            <DependencyList
+              task={state.selectedTask}
+              blockers={state.depBlockers}
+              dependents={state.depDependents}
+              related={state.depRelated}
+              duplicates={state.depDuplicates}
+              selectedIndex={state.depSelectedIndex}
+              isAddingDep={state.isAddingDep}
+              addDepInput={state.addDepInput}
+            />
+          )}
 
         {!state.confirmDelete &&
           (state.activeView === ViewType.TaskCreate || state.activeView === ViewType.TaskEdit) && (
             <TaskForm
               editingTask={state.activeView === ViewType.TaskEdit ? state.selectedTask : null}
+              allTasks={allProjectTasks}
               onSave={handleFormSave}
               onCancel={handleFormCancel}
             />
@@ -429,8 +800,13 @@ export function App({ container, initialProject }: Props) {
             projects={state.projects}
             activeProject={state.activeProject}
             onSelect={handleProjectSelect}
+            onCreate={handleProjectCreate}
             onCancel={handleProjectCancel}
           />
+        )}
+
+        {!state.confirmDelete && state.activeView === ViewType.ProjectCreate && (
+          <ProjectForm onSave={handleProjectFormSave} onCancel={handleProjectFormCancel} />
         )}
 
         {!state.confirmDelete && state.activeView === ViewType.Help && <HelpOverlay />}

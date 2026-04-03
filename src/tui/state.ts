@@ -1,4 +1,4 @@
-import { ViewType, SortColumn } from './types.js';
+import { ViewType } from './types.js';
 import type { AppState, Action } from './types.js';
 
 export const initialState: AppState = {
@@ -9,13 +9,22 @@ export const initialState: AppState = {
   selectedTask: null,
   projects: [],
   activeProject: null,
-  filter: {},
+  filter: { status: 'backlog' },
   searchQuery: '',
   isSearchActive: false,
-  sort: { column: SortColumn.Priority, direction: 'asc' },
+  isReordering: false,
+  reorderSnapshot: null,
   flash: null,
   confirmDelete: null,
   formData: null,
+  depBlockers: [],
+  depDependents: [],
+  depRelated: [],
+  depDuplicates: [],
+  depSelectedIndex: 0,
+  isAddingDep: false,
+  addDepInput: '',
+  focusedPanel: 'list',
 };
 
 export function appReducer(state: AppState, action: Action): AppState {
@@ -26,6 +35,7 @@ export function appReducer(state: AppState, action: Action): AppState {
         breadcrumbs: [...state.breadcrumbs, action.view],
         activeView: action.view,
         confirmDelete: null,
+        focusedPanel: 'list',
       };
 
     case 'GO_BACK': {
@@ -38,6 +48,7 @@ export function appReducer(state: AppState, action: Action): AppState {
         confirmDelete: null,
         isSearchActive: false,
         formData: null,
+        focusedPanel: 'list',
       };
     }
 
@@ -62,31 +73,13 @@ export function appReducer(state: AppState, action: Action): AppState {
       };
 
     case 'CLEAR_FILTER':
-      return { ...state, filter: {}, selectedIndex: 0, searchQuery: '' };
+      return { ...state, filter: { status: 'backlog' }, selectedIndex: 0, searchQuery: '' };
 
     case 'SET_SEARCH_ACTIVE':
       return { ...state, isSearchActive: action.active };
 
     case 'SET_SEARCH_QUERY':
       return { ...state, searchQuery: action.query };
-
-    case 'CYCLE_SORT': {
-      const current = state.sort;
-      if (current.column === action.column) {
-        // Same column: toggle direction
-        return {
-          ...state,
-          sort: { column: action.column, direction: current.direction === 'asc' ? 'desc' : 'asc' },
-          selectedIndex: 0,
-        };
-      }
-      // Different column: set to asc
-      return {
-        ...state,
-        sort: { column: action.column, direction: 'asc' },
-        selectedIndex: 0,
-      };
-    }
 
     case 'FLASH':
       return {
@@ -112,10 +105,94 @@ export function appReducer(state: AppState, action: Action): AppState {
       return { ...state, selectedIndex: newIndex };
     }
 
+    case 'SET_CURSOR': {
+      const maxIndex = Math.max(0, state.tasks.length - 1);
+      return { ...state, selectedIndex: Math.max(0, Math.min(action.index, maxIndex)) };
+    }
+
     case 'SELECT_TASK':
       return { ...state, selectedTask: action.task };
 
     case 'SET_FORM_DATA':
       return { ...state, formData: action.data };
+
+    case 'ENTER_REORDER':
+      return {
+        ...state,
+        isReordering: true,
+        reorderSnapshot: [...state.tasks],
+      };
+
+    case 'REORDER_MOVE': {
+      if (!state.isReordering) return state;
+      const idx = state.selectedIndex;
+      const tasks = [...state.tasks];
+      const swapIdx = action.direction === 'up' ? idx - 1 : idx + 1;
+      if (swapIdx < 0 || swapIdx >= tasks.length) return state;
+
+      // Swap tasks in the local array
+      const current = tasks[idx];
+      const swap = tasks[swapIdx];
+      if (!current || !swap) return state;
+      tasks[idx] = swap;
+      tasks[swapIdx] = current;
+
+      return {
+        ...state,
+        tasks,
+        selectedIndex: swapIdx,
+      };
+    }
+
+    case 'EXIT_REORDER': {
+      if (!action.save && state.reorderSnapshot) {
+        // Revert to snapshot
+        return {
+          ...state,
+          isReordering: false,
+          tasks: state.reorderSnapshot,
+          reorderSnapshot: null,
+        };
+      }
+      return {
+        ...state,
+        isReordering: false,
+        reorderSnapshot: null,
+      };
+    }
+
+    case 'SET_DEPS':
+      return {
+        ...state,
+        depBlockers: action.blockers,
+        depDependents: action.dependents,
+        depRelated: action.related,
+        depDuplicates: action.duplicates,
+        depSelectedIndex: 0,
+      };
+
+    case 'DEP_MOVE_CURSOR': {
+      const total =
+        state.depBlockers.length +
+        state.depDependents.length +
+        state.depRelated.length +
+        state.depDuplicates.length;
+      if (total === 0) return state;
+      const maxIdx = Math.max(0, total - 1);
+      const newIdx =
+        action.direction === 'up'
+          ? Math.max(0, state.depSelectedIndex - 1)
+          : Math.min(maxIdx, state.depSelectedIndex + 1);
+      return { ...state, depSelectedIndex: newIdx };
+    }
+
+    case 'SET_ADDING_DEP':
+      return { ...state, isAddingDep: action.active, addDepInput: '' };
+
+    case 'SET_ADD_DEP_INPUT':
+      return { ...state, addDepInput: action.input };
+
+    case 'SET_PANEL_FOCUS':
+      return { ...state, focusedPanel: action.panel };
   }
 }

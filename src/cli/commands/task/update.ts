@@ -10,7 +10,6 @@ export function registerTaskUpdate(parent: Command, container: Container): void 
     .option('-d, --description <description>', 'Task description')
     .option('-t, --type <type>', 'Task type: story, tech-debt, bug')
     .option('-s, --status <status>', 'Task status')
-    .option('--priority <priority>', 'Priority 1-5')
     .option('--parent <parentId>', 'Parent task id')
     .option('--technical-notes <notes>', 'Replace technical notes')
     .option('--additional-requirements <requirements>', 'Replace additional requirements')
@@ -24,7 +23,6 @@ export function registerTaskUpdate(parent: Command, container: Container): void 
           description?: string;
           type?: string;
           status?: string;
-          priority?: string;
           parent?: string;
           technicalNotes?: string;
           additionalRequirements?: string;
@@ -37,7 +35,6 @@ export function registerTaskUpdate(parent: Command, container: Container): void 
           description: opts.description,
           type: opts.type,
           status: opts.status,
-          priority: opts.priority ? parseInt(opts.priority, 10) : undefined,
           parentId: opts.parent,
           technicalNotes: opts.technicalNotes,
           additionalRequirements: opts.additionalRequirements,

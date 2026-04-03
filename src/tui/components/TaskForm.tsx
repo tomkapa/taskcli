@@ -1,36 +1,37 @@
 import { useState, useCallback } from 'react';
-import { Box, Text, useInput, useApp } from 'ink';
+import { Box, Text, useInput } from 'ink';
 import { TaskStatus, TaskType } from '../../types/enums.js';
 import type { Task } from '../../types/task.js';
+import type { DependencyEntry } from '../../types/task.js';
 import { theme } from '../theme.js';
+import { STATUS_VALUES, TYPE_VALUES, DEP_TYPE_LABEL } from '../constants.js';
 import { openInEditor } from '../editor.js';
-
-const STATUS_VALUES = Object.values(TaskStatus);
-const TYPE_VALUES = Object.values(TaskType);
+import { TaskPicker } from './TaskPicker.js';
+import type { PickedDependency } from './TaskPicker.js';
 
 interface Props {
   editingTask: Task | null;
+  /** All project tasks, used by the dependency picker */
+  allTasks: Task[];
   onSave: (data: {
     name: string;
     description: string;
     type: string;
     status: string;
-    priority: number;
     technicalNotes: string;
     additionalRequirements: string;
+    dependsOn?: DependencyEntry[];
   }) => void;
   onCancel: () => void;
 }
 
-type FieldType = 'inline' | 'select' | 'number' | 'editor';
+type FieldType = 'inline' | 'select' | 'editor' | 'picker';
 
 interface Field {
   label: string;
   key: string;
   type: FieldType;
   options?: string[];
-  min?: number;
-  max?: number;
   editorFilename?: string;
 }
 
@@ -38,7 +39,7 @@ const FIELDS: Field[] = [
   { label: 'Name', key: 'name', type: 'inline' },
   { label: 'Type', key: 'type', type: 'select', options: TYPE_VALUES },
   { label: 'Status', key: 'status', type: 'select', options: STATUS_VALUES },
-  { label: 'Priority', key: 'priority', type: 'number', min: 1, max: 5 },
+  { label: 'Depends On', key: 'dependsOn', type: 'picker' },
   { label: 'Description', key: 'description', type: 'editor', editorFilename: 'description.md' },
   {
     label: 'Tech Notes',
@@ -54,20 +55,19 @@ const FIELDS: Field[] = [
   },
 ];
 
-export function TaskForm({ editingTask, onSave, onCancel }: Props) {
-  const { exit: _exit, ...appRest } = useApp();
-  void appRest;
+export function TaskForm({ editingTask, allTasks, onSave, onCancel }: Props) {
   const [focusIndex, setFocusIndex] = useState(0);
-  const [values, setValues] = useState<Record<string, string | number>>({
+  const [values, setValues] = useState<Record<string, string>>({
     name: editingTask?.name ?? '',
     type: editingTask?.type ?? TaskType.Story,
     status: editingTask?.status ?? TaskStatus.Backlog,
-    priority: editingTask?.priority ?? 3,
     description: editingTask?.description ?? '',
     technicalNotes: editingTask?.technicalNotes ?? '',
     additionalRequirements: editingTask?.additionalRequirements ?? '',
   });
   const [editorActive, setEditorActive] = useState(false);
+  const [pickerActive, setPickerActive] = useState(false);
+  const [pickedDeps, setPickedDeps] = useState<PickedDependency[]>([]);
 
   const currentField = FIELDS[focusIndex];
 
@@ -75,7 +75,7 @@ export function TaskForm({ editingTask, onSave, onCancel }: Props) {
     (field: Field) => {
       setEditorActive(true);
       setTimeout(() => {
-        const content = String(values[field.key] ?? '');
+        const content = values[field.key] ?? '';
         const result = openInEditor(content, field.editorFilename ?? `${field.key}.md`);
         if (result !== null) {
           setValues((v) => ({ ...v, [field.key]: result }));
@@ -86,9 +86,18 @@ export function TaskForm({ editingTask, onSave, onCancel }: Props) {
     [values],
   );
 
+  const handlePickerConfirm = useCallback((selected: PickedDependency[]) => {
+    setPickedDeps(selected);
+    setPickerActive(false);
+  }, []);
+
+  const handlePickerCancel = useCallback(() => {
+    setPickerActive(false);
+  }, []);
+
   useInput(
     (input, key) => {
-      if (editorActive) return;
+      if (editorActive || pickerActive) return;
 
       if (key.escape) {
         onCancel();
@@ -109,27 +118,41 @@ export function TaskForm({ editingTask, onSave, onCancel }: Props) {
       if (input === 's' && key.ctrl) {
         const nameVal = values['name'];
         if (typeof nameVal === 'string' && nameVal.trim()) {
-          onSave({
+          const baseData = {
             name: nameVal,
-            description: `${values['description'] ?? ''}`,
-            type: `${values['type'] ?? TaskType.Story}`,
-            status: `${values['status'] ?? TaskStatus.Backlog}`,
-            priority: Number(values['priority'] ?? 3),
-            technicalNotes: `${values['technicalNotes'] ?? ''}`,
-            additionalRequirements: `${values['additionalRequirements'] ?? ''}`,
-          });
+            description: values['description'] ?? '',
+            type: values['type'] ?? TaskType.Story,
+            status: values['status'] ?? TaskStatus.Backlog,
+            technicalNotes: values['technicalNotes'] ?? '',
+            additionalRequirements: values['additionalRequirements'] ?? '',
+          };
+          if (pickedDeps.length > 0) {
+            onSave({ ...baseData, dependsOn: pickedDeps.map((d) => ({ id: d.id, type: d.type })) });
+          } else {
+            onSave(baseData);
+          }
         }
         return;
       }
 
       if (currentField.type === 'inline') {
-        const currentValue = String(values[currentField.key] ?? '');
+        const currentValue = values[currentField.key] ?? '';
         if (key.backspace || key.delete) {
           setValues((v) => ({ ...v, [currentField.key]: currentValue.slice(0, -1) }));
         } else if (key.return) {
           setFocusIndex((i) => Math.min(FIELDS.length - 1, i + 1));
         } else if (input && !key.ctrl && !key.meta) {
           setValues((v) => ({ ...v, [currentField.key]: currentValue + input }));
+        }
+      }
+
+      if (currentField.type === 'picker') {
+        if (key.return) {
+          setPickerActive(true);
+        } else if (key.downArrow) {
+          setFocusIndex((i) => Math.min(FIELDS.length - 1, i + 1));
+        } else if (key.upArrow) {
+          setFocusIndex((i) => Math.max(0, i - 1));
         }
       }
 
@@ -145,7 +168,7 @@ export function TaskForm({ editingTask, onSave, onCancel }: Props) {
 
       if (currentField.type === 'select') {
         const options = currentField.options ?? [];
-        const currentValue = String(values[currentField.key] ?? '');
+        const currentValue = values[currentField.key] ?? '';
         const currentIndex = options.indexOf(currentValue);
         if (key.rightArrow || key.return || input === ' ') {
           const nextIndex = (currentIndex + 1) % options.length;
@@ -155,24 +178,33 @@ export function TaskForm({ editingTask, onSave, onCancel }: Props) {
           setValues((v) => ({ ...v, [currentField.key]: options[prevIndex] ?? '' }));
         }
       }
-
-      if (currentField.type === 'number') {
-        const currentValue = Number(values[currentField.key] ?? 3);
-        const min = currentField.min ?? 1;
-        const max = currentField.max ?? 5;
-        if (key.rightArrow || key.upArrow) {
-          setValues((v) => ({ ...v, [currentField.key]: Math.min(max, currentValue + 1) }));
-        } else if (key.leftArrow || key.downArrow) {
-          setValues((v) => ({ ...v, [currentField.key]: Math.max(min, currentValue - 1) }));
-        } else if (input && /^[1-5]$/.test(input)) {
-          setValues((v) => ({ ...v, [currentField.key]: parseInt(input, 10) }));
-        }
-      }
     },
-    { isActive: !editorActive },
+    { isActive: !editorActive && !pickerActive },
   );
 
+  // When picker is open, render it instead of the form
+  if (pickerActive) {
+    const pickerExclude: { excludeIds?: Set<string> } = editingTask
+      ? { excludeIds: new Set([editingTask.id]) }
+      : {};
+    return (
+      <TaskPicker
+        tasks={allTasks}
+        {...pickerExclude}
+        initialSelection={pickedDeps}
+        onConfirm={handlePickerConfirm}
+        onCancel={handlePickerCancel}
+      />
+    );
+  }
+
   const isEdit = editingTask !== null;
+
+  // Build dependency display summary
+  const depSummary =
+    pickedDeps.length > 0
+      ? pickedDeps.map((d) => `${d.id} (${DEP_TYPE_LABEL[d.type] ?? d.type})`).join(', ')
+      : '';
 
   return (
     <Box flexDirection="column" flexGrow={1} borderStyle="bold" borderColor={theme.borderFocus}>
@@ -186,8 +218,8 @@ export function TaskForm({ editingTask, onSave, onCancel }: Props) {
       <Box flexDirection="column" paddingX={1} paddingY={0}>
         {FIELDS.map((field, i) => {
           const isFocused = i === focusIndex;
-          const value = values[field.key];
-          const displayValue = String(value ?? '');
+          const value = field.key === 'dependsOn' ? depSummary : (values[field.key] ?? '');
+          const displayValue = value;
 
           return (
             <Box key={field.key} gap={1}>
@@ -199,6 +231,19 @@ export function TaskForm({ editingTask, onSave, onCancel }: Props) {
                 <Text color={isFocused ? theme.yaml.value : theme.table.fg}>
                   {displayValue}
                   {isFocused ? <Text color={theme.titleHighlight}>_</Text> : ''}
+                </Text>
+              )}
+
+              {field.type === 'picker' && (
+                <Text>
+                  {displayValue ? (
+                    <Text color={theme.status.added}>
+                      {displayValue.length > 60 ? displayValue.slice(0, 60) + '...' : displayValue}
+                    </Text>
+                  ) : (
+                    <Text dimColor>{isFocused ? 'press enter to select' : 'none'}</Text>
+                  )}
+                  {isFocused && <Text color={theme.menu.key}> [enter: open picker]</Text>}
                 </Text>
               )}
 
@@ -217,14 +262,6 @@ export function TaskForm({ editingTask, onSave, onCancel }: Props) {
               )}
 
               {field.type === 'select' && (
-                <Text color={isFocused ? theme.yaml.value : theme.table.fg}>
-                  {isFocused ? '< ' : '  '}
-                  {displayValue}
-                  {isFocused ? ' >' : ''}
-                </Text>
-              )}
-
-              {field.type === 'number' && (
                 <Text color={isFocused ? theme.yaml.value : theme.table.fg}>
                   {isFocused ? '< ' : '  '}
                   {displayValue}

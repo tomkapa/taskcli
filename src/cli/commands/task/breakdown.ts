@@ -1,9 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { Command } from 'commander';
 import type { Container } from '../../container.js';
-import { handleResult } from '../../output.js';
+import { handleResult, printError } from '../../output.js';
 import { AppError } from '../../../errors/app-error.js';
-import { printError } from '../../output.js';
 
 export function registerTaskBreakdown(parent: Command, container: Container): void {
   parent
@@ -11,20 +10,28 @@ export function registerTaskBreakdown(parent: Command, container: Container): vo
     .description('Create subtasks from a JSON file')
     .requiredOption('-f, --file <path>', 'JSON file with array of subtask definitions')
     .action((parentId: string, opts: { file: string }) => {
-      let subtasks: unknown[];
+      let content: string;
       try {
-        const content = readFileSync(opts.file, 'utf-8');
-        const parsed: unknown = JSON.parse(content);
-        if (!Array.isArray(parsed)) {
-          printError(new AppError('VALIDATION', 'File must contain a JSON array of subtasks'));
-        }
-        subtasks = parsed;
+        content = readFileSync(opts.file, 'utf-8');
       } catch (e) {
-        if (e instanceof AppError) throw e;
-        printError(new AppError('VALIDATION', `Failed to read subtasks file: ${opts.file}`, e));
+        return printError(
+          new AppError('VALIDATION', `Failed to read subtasks file: ${opts.file}`, e),
+        );
       }
 
-      const result = container.taskService.breakdownTask(parentId, subtasks);
-      handleResult(result);
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(content);
+      } catch (e) {
+        return printError(
+          new AppError('VALIDATION', `Invalid JSON in subtasks file: ${opts.file}`, e),
+        );
+      }
+
+      if (!Array.isArray(parsed)) {
+        return printError(new AppError('VALIDATION', 'File must contain a JSON array of subtasks'));
+      }
+
+      handleResult(container.taskService.breakdownTask(parentId, parsed));
     });
 }

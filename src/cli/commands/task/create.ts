@@ -5,16 +5,16 @@ import { handleResult } from '../../output.js';
 export function registerTaskCreate(parent: Command, container: Container): void {
   parent
     .command('create')
-    .description('Create a new task')
+    .description('Create a new task (appended to bottom of backlog)')
     .requiredOption('-n, --name <name>', 'Task name')
     .option('-p, --project <project>', 'Project id or name')
     .option('-d, --description <description>', 'Task description')
     .option('-t, --type <type>', 'Task type: story, tech-debt, bug', 'story')
     .option('-s, --status <status>', 'Task status', 'backlog')
-    .option('--priority <priority>', 'Priority 1-5 (1=critical)', '3')
     .option('--parent <parentId>', 'Parent task id for subtask')
     .option('--technical-notes <notes>', 'Technical notes (markdown)')
     .option('--additional-requirements <requirements>', 'Additional requirements (markdown)')
+    .option('--depends-on <ids...>', 'Task ids this task depends on (blocks relationship)')
     .action(
       (opts: {
         name: string;
@@ -22,10 +22,10 @@ export function registerTaskCreate(parent: Command, container: Container): void 
         description?: string;
         type?: string;
         status?: string;
-        priority?: string;
         parent?: string;
         technicalNotes?: string;
         additionalRequirements?: string;
+        dependsOn?: string[];
       }) => {
         const result = container.taskService.createTask(
           {
@@ -33,10 +33,10 @@ export function registerTaskCreate(parent: Command, container: Container): void 
             description: opts.description,
             type: opts.type,
             status: opts.status,
-            priority: opts.priority ? parseInt(opts.priority, 10) : undefined,
             parentId: opts.parent,
             technicalNotes: opts.technicalNotes,
             additionalRequirements: opts.additionalRequirements,
+            dependsOn: opts.dependsOn?.map((id) => ({ id })),
           },
           opts.project,
         );

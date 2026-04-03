@@ -4,10 +4,15 @@ import { handleResult } from '../../output.js';
 
 export function registerProjectDelete(parent: Command, container: Container): void {
   parent
-    .command('delete <id>')
-    .description('Delete a project')
-    .action((id: string) => {
-      const result = container.projectService.deleteProject(id);
+    .command('delete <idOrKeyOrName>')
+    .description('Delete a project (lookup by id, key, or name)')
+    .action((idOrKeyOrName: string) => {
+      const resolved = container.projectService.resolveProject(idOrKeyOrName);
+      if (!resolved.ok) {
+        handleResult(resolved);
+        return;
+      }
+      const result = container.projectService.deleteProject(resolved.value.id);
       handleResult(result);
     });
 }

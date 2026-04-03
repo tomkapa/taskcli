@@ -13,4 +13,5 @@ export default defineConfig({
   esbuildOptions(options) {
     options.jsx = 'automatic';
   },
+  onSuccess: 'mkdir -p dist/migrations && cp src/db/migrations/*.sql dist/migrations/',
 });

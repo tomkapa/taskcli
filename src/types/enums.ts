@@ -15,11 +15,33 @@ export const TaskType = {
 } as const;
 export type TaskType = (typeof TaskType)[keyof typeof TaskType];
 
-export const Priority = {
-  Critical: 1,
-  High: 2,
-  Medium: 3,
-  Low: 4,
-  Lowest: 5,
+/** Types stored in the database. */
+export const DependencyType = {
+  Blocks: 'blocks',
+  RelatesTo: 'relates-to',
+  Duplicates: 'duplicates',
 } as const;
-export type Priority = (typeof Priority)[keyof typeof Priority];
+export type DependencyType = (typeof DependencyType)[keyof typeof DependencyType];
+
+/**
+ * UI-level dependency types — includes BlockedBy which is a reverse-Blocks
+ * relationship resolved before persisting to the database.
+ */
+export const UIDependencyType = {
+  ...DependencyType,
+  BlockedBy: 'blocked-by',
+} as const;
+export type UIDependencyType = (typeof UIDependencyType)[keyof typeof UIDependencyType];
+
+/** Gap between consecutive rank values, used for insertion between neighbors. */
+export const RANK_GAP = 1000.0;
+
+/** Statuses that represent terminal/completed task states. */
+export const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
+  TaskStatus.Done,
+  TaskStatus.Cancelled,
+]);
+
+export function isTerminalStatus(status: string): boolean {
+  return TERMINAL_STATUSES.has(status);
+}

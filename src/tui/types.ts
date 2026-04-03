@@ -8,26 +8,15 @@ export const ViewType = {
   TaskCreate: 'task-create',
   TaskEdit: 'task-edit',
   ProjectSelector: 'project-selector',
+  ProjectCreate: 'project-create',
+  DependencyList: 'dependency-list',
   Help: 'help',
 } as const;
 export type ViewType = (typeof ViewType)[keyof typeof ViewType];
 
 export type FlashLevel = 'info' | 'warn' | 'error';
 
-export const SortColumn = {
-  Priority: 'priority',
-  Status: 'status',
-  Type: 'type',
-  Name: 'name',
-} as const;
-export type SortColumn = (typeof SortColumn)[keyof typeof SortColumn];
-
-export type SortDirection = 'asc' | 'desc';
-
-export interface SortState {
-  column: SortColumn;
-  direction: SortDirection;
-}
+export type PanelFocus = 'list' | 'detail';
 
 export interface AppState {
   activeView: ViewType;
@@ -40,10 +29,19 @@ export interface AppState {
   filter: TaskFilter;
   searchQuery: string;
   isSearchActive: boolean;
-  sort: SortState;
+  isReordering: boolean;
+  reorderSnapshot: Task[] | null;
   flash: { message: string; level: FlashLevel } | null;
   confirmDelete: Task | null;
   formData: Partial<FormData> | null;
+  depBlockers: Task[];
+  depDependents: Task[];
+  depRelated: Task[];
+  depDuplicates: Task[];
+  depSelectedIndex: number;
+  isAddingDep: boolean;
+  addDepInput: string;
+  focusedPanel: PanelFocus;
 }
 
 export interface FormData {
@@ -51,10 +49,8 @@ export interface FormData {
   description: string;
   type: string;
   status: string;
-  priority: number;
   technicalNotes: string;
   additionalRequirements: string;
-  parentId: string;
 }
 
 export type Action =
@@ -71,7 +67,15 @@ export type Action =
   | { type: 'CLEAR_FLASH' }
   | { type: 'CONFIRM_DELETE'; task: Task }
   | { type: 'CANCEL_DELETE' }
-  | { type: 'CYCLE_SORT'; column: SortColumn }
   | { type: 'MOVE_CURSOR'; direction: 'up' | 'down' }
+  | { type: 'SET_CURSOR'; index: number }
   | { type: 'SELECT_TASK'; task: Task }
-  | { type: 'SET_FORM_DATA'; data: Partial<FormData> | null };
+  | { type: 'SET_FORM_DATA'; data: Partial<FormData> | null }
+  | { type: 'ENTER_REORDER' }
+  | { type: 'REORDER_MOVE'; direction: 'up' | 'down' }
+  | { type: 'EXIT_REORDER'; save: boolean }
+  | { type: 'SET_DEPS'; blockers: Task[]; dependents: Task[]; related: Task[]; duplicates: Task[] }
+  | { type: 'DEP_MOVE_CURSOR'; direction: 'up' | 'down' }
+  | { type: 'SET_ADDING_DEP'; active: boolean }
+  | { type: 'SET_ADD_DEP_INPUT'; input: string }
+  | { type: 'SET_PANEL_FOCUS'; panel: PanelFocus };

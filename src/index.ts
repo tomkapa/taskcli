@@ -2,12 +2,14 @@ import { loadConfig } from './config/index.js';
 import { createDatabase } from './db/connection.js';
 import { runMigrations } from './db/migrator.js';
 import { initTelemetry, shutdownTelemetry } from './logging/telemetry.js';
+import { logger } from './logging/logger.js';
 import { createContainer } from './cli/container.js';
 import { buildCLI } from './cli/index.js';
 import { AppError } from './errors/app-error.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
+  logger.init(config.logDir);
   initTelemetry(config);
 
   const db = createDatabase(config.dbPath);

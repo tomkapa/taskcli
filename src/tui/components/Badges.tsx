@@ -17,14 +17,6 @@ const TYPE_DISPLAY: Record<string, { label: string; color: string }> = {
   [TaskType.Bug]: { label: 'bug', color: theme.status.error },
 };
 
-const PRIORITY_COLORS: Record<number, string> = {
-  1: theme.status.error,
-  2: theme.status.pending,
-  3: theme.status.new,
-  4: theme.status.completed,
-  5: theme.status.completed,
-};
-
 export function StatusBadge({ status }: { status: string }) {
   const display = STATUS_DISPLAY[status] ?? { label: status, color: 'white' };
   return <Text color={display.color}>{display.label.padEnd(7)}</Text>;
@@ -33,13 +25,4 @@ export function StatusBadge({ status }: { status: string }) {
 export function TypeBadge({ type }: { type: string }) {
   const display = TYPE_DISPLAY[type] ?? { label: type, color: 'white' };
   return <Text color={display.color}>{display.label.padEnd(5)}</Text>;
-}
-
-export function PriorityBadge({ priority }: { priority: number }) {
-  const color = PRIORITY_COLORS[priority] ?? 'white';
-  return (
-    <Text color={color} bold={priority <= 2}>
-      P{priority}
-    </Text>
-  );
 }

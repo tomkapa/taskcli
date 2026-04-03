@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 export interface Config {
   dbPath: string;
+  logDir: string;
   logLevel: string;
   otelEndpoint: string | undefined;
 }
@@ -16,8 +17,12 @@ export function loadConfig(): Config {
   const dataDir = process.env['TASK_DATA_DIR'] ?? join(homedir(), '.task');
   ensureDir(dataDir);
 
+  const logDir = process.env['TASK_LOG_DIR'] ?? join(dataDir, 'logs');
+  ensureDir(logDir);
+
   return {
     dbPath: process.env['TASK_DB_PATH'] ?? join(dataDir, 'data.db'),
+    logDir,
     logLevel: process.env['TASK_LOG_LEVEL'] ?? 'info',
     otelEndpoint: process.env['OTEL_EXPORTER_OTLP_ENDPOINT'],
   };

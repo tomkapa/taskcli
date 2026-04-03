@@ -7,10 +7,11 @@ interface Props {
   projects: Project[];
   activeProject: Project | null;
   onSelect: (project: Project) => void;
+  onCreate: () => void;
   onCancel: () => void;
 }
 
-export function ProjectSelector({ projects, activeProject, onSelect, onCancel }: Props) {
+export function ProjectSelector({ projects, activeProject, onSelect, onCreate, onCancel }: Props) {
   const [selectedIndex, setSelectedIndex] = useState(() => {
     if (!activeProject) return 0;
     const idx = projects.findIndex((p) => p.id === activeProject.id);
@@ -27,6 +28,10 @@ export function ProjectSelector({ projects, activeProject, onSelect, onCancel }:
       if (project) {
         onSelect(project);
       }
+      return;
+    }
+    if (input === 'c') {
+      onCreate();
       return;
     }
     if (key.upArrow || input === 'k') {
@@ -62,9 +67,7 @@ export function ProjectSelector({ projects, activeProject, onSelect, onCancel }:
 
       {projects.length === 0 ? (
         <Box paddingX={1} paddingY={1}>
-          <Text color={theme.fg}>
-            No projects. Create via: task project create -n &quot;name&quot;
-          </Text>
+          <Text color={theme.fg}>No projects. Press &apos;c&apos; to create one.</Text>
         </Box>
       ) : (
         projects.map((project, i) => {
@@ -95,6 +98,10 @@ export function ProjectSelector({ projects, activeProject, onSelect, onCancel }:
       )}
 
       <Box flexGrow={1} />
+
+      <Box paddingX={1}>
+        <Text dimColor>enter: select | c: create | esc: back</Text>
+      </Box>
     </Box>
   );
 }

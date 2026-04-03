@@ -3,3 +3,4 @@
 - Log MUST be riched for debug, use opentelemetry for standard approach
 - Prefer strict type to capture potential error at compile time
 - fmt and lint MUST be run before exit
+- Action and result MUST consistent between TUI and CLI command.

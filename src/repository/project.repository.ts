@@ -5,12 +5,15 @@ import type { Project, CreateProjectInput, UpdateProjectInput } from '../types/p
 import { AppError } from '../errors/app-error.js';
 import { ulid } from 'ulid';
 import { logger } from '../logging/logger.js';
+import { NOT_DELETED } from './shared.js';
 
 interface ProjectRow {
   id: string;
+  key: string;
   name: string;
   description: string;
   is_default: number;
+  task_counter: number;
   created_at: string;
   updated_at: string;
 }
@@ -18,6 +21,7 @@ interface ProjectRow {
 function rowToProject(row: ProjectRow): Project {
   return {
     id: row.id,
+    key: row.key,
     name: row.name,
     description: row.description,
     isDefault: row.is_default === 1,
@@ -27,19 +31,21 @@ function rowToProject(row: ProjectRow): Project {
 }
 
 export interface ProjectRepository {
-  insert(input: CreateProjectInput): Result<Project>;
+  insert(input: CreateProjectInput & { key: string }): Result<Project>;
   findById(id: string): Result<Project | null>;
+  findByKey(key: string): Result<Project | null>;
   findByName(name: string): Result<Project | null>;
   findDefault(): Result<Project | null>;
   findAll(): Result<Project[]>;
   update(id: string, input: UpdateProjectInput): Result<Project>;
   delete(id: string): Result<void>;
+  incrementTaskCounter(id: string): Result<number>;
 }
 
 export class SqliteProjectRepository implements ProjectRepository {
   constructor(private readonly db: Database.Database) {}
 
-  insert(input: CreateProjectInput): Result<Project> {
+  insert(input: CreateProjectInput & { key: string }): Result<Project> {
     return logger.startSpan('ProjectRepository.insert', () => {
       try {
         const now = new Date().toISOString();
@@ -51,10 +57,18 @@ export class SqliteProjectRepository implements ProjectRepository {
 
         this.db
           .prepare(
-            `INSERT INTO projects (id, name, description, is_default, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO projects (id, key, name, description, is_default, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
           )
-          .run(id, input.name, input.description ?? '', input.isDefault ? 1 : 0, now, now);
+          .run(
+            id,
+            input.key,
+            input.name,
+            input.description ?? '',
+            input.isDefault ? 1 : 0,
+            now,
+            now,
+          );
 
         const row = this.db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as
           | ProjectRow
@@ -74,20 +88,31 @@ export class SqliteProjectRepository implements ProjectRepository {
 
   findById(id: string): Result<Project | null> {
     try {
-      const row = this.db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as
-        | ProjectRow
-        | undefined;
+      const row = this.db
+        .prepare(`SELECT * FROM projects WHERE id = ? AND ${NOT_DELETED}`)
+        .get(id) as ProjectRow | undefined;
       return ok(row ? rowToProject(row) : null);
     } catch (e) {
       return err(new AppError('DB_ERROR', 'Failed to find project by id', e));
     }
   }
 
+  findByKey(key: string): Result<Project | null> {
+    try {
+      const row = this.db
+        .prepare(`SELECT * FROM projects WHERE key = ? AND ${NOT_DELETED}`)
+        .get(key) as ProjectRow | undefined;
+      return ok(row ? rowToProject(row) : null);
+    } catch (e) {
+      return err(new AppError('DB_ERROR', 'Failed to find project by key', e));
+    }
+  }
+
   findByName(name: string): Result<Project | null> {
     try {
-      const row = this.db.prepare('SELECT * FROM projects WHERE name = ?').get(name) as
-        | ProjectRow
-        | undefined;
+      const row = this.db
+        .prepare(`SELECT * FROM projects WHERE name = ? AND ${NOT_DELETED}`)
+        .get(name) as ProjectRow | undefined;
       return ok(row ? rowToProject(row) : null);
     } catch (e) {
       return err(new AppError('DB_ERROR', 'Failed to find project by name', e));
@@ -96,9 +121,9 @@ export class SqliteProjectRepository implements ProjectRepository {
 
   findDefault(): Result<Project | null> {
     try {
-      const row = this.db.prepare('SELECT * FROM projects WHERE is_default = 1').get() as
-        | ProjectRow
-        | undefined;
+      const row = this.db
+        .prepare(`SELECT * FROM projects WHERE is_default = 1 AND ${NOT_DELETED}`)
+        .get() as ProjectRow | undefined;
       return ok(row ? rowToProject(row) : null);
     } catch (e) {
       return err(new AppError('DB_ERROR', 'Failed to find default project', e));
@@ -108,7 +133,7 @@ export class SqliteProjectRepository implements ProjectRepository {
   findAll(): Result<Project[]> {
     try {
       const rows = this.db
-        .prepare('SELECT * FROM projects ORDER BY created_at DESC')
+        .prepare(`SELECT * FROM projects WHERE ${NOT_DELETED} ORDER BY created_at DESC`)
         .all() as ProjectRow[];
       return ok(rows.map(rowToProject));
     } catch (e) {
@@ -119,9 +144,9 @@ export class SqliteProjectRepository implements ProjectRepository {
   update(id: string, input: UpdateProjectInput): Result<Project> {
     return logger.startSpan('ProjectRepository.update', () => {
       try {
-        const existing = this.db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as
-          | ProjectRow
-          | undefined;
+        const existing = this.db
+          .prepare(`SELECT * FROM projects WHERE id = ? AND ${NOT_DELETED}`)
+          .get(id) as ProjectRow | undefined;
         if (!existing) {
           return err(new AppError('NOT_FOUND', `Project not found: ${id}`));
         }
@@ -165,16 +190,46 @@ export class SqliteProjectRepository implements ProjectRepository {
   delete(id: string): Result<void> {
     return logger.startSpan('ProjectRepository.delete', () => {
       try {
-        const existing = this.db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as
-          | ProjectRow
-          | undefined;
+        const existing = this.db
+          .prepare(`SELECT * FROM projects WHERE id = ? AND ${NOT_DELETED}`)
+          .get(id) as ProjectRow | undefined;
         if (!existing) {
           return err(new AppError('NOT_FOUND', `Project not found: ${id}`));
         }
-        this.db.prepare('DELETE FROM projects WHERE id = ?').run(id);
+        const now = new Date().toISOString();
+        this.db
+          .prepare('UPDATE projects SET deleted_at = ?, updated_at = ? WHERE id = ?')
+          .run(now, now, id);
+        // Soft-delete all tasks in this project
+        this.db
+          .prepare(
+            'UPDATE tasks SET deleted_at = ?, updated_at = ? WHERE project_id = ? AND deleted_at IS NULL',
+          )
+          .run(now, now, id);
         return ok(undefined);
       } catch (e) {
         return err(new AppError('DB_ERROR', 'Failed to delete project', e));
+      }
+    });
+  }
+
+  incrementTaskCounter(id: string): Result<number> {
+    return logger.startSpan('ProjectRepository.incrementTaskCounter', () => {
+      try {
+        this.db
+          .prepare(
+            `UPDATE projects SET task_counter = task_counter + 1 WHERE id = ? AND ${NOT_DELETED}`,
+          )
+          .run(id);
+        const row = this.db
+          .prepare(`SELECT task_counter FROM projects WHERE id = ? AND ${NOT_DELETED}`)
+          .get(id) as { task_counter: number } | undefined;
+        if (!row) {
+          return err(new AppError('NOT_FOUND', `Project not found: ${id}`));
+        }
+        return ok(row.task_counter);
+      } catch (e) {
+        return err(new AppError('DB_ERROR', 'Failed to increment task counter', e));
       }
     });
   }

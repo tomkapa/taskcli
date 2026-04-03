@@ -2,63 +2,64 @@ import type Database from 'better-sqlite3';
 import type { Result } from '../types/common.js';
 import { ok, err } from '../types/common.js';
 import type { Task, CreateTaskInput, UpdateTaskInput, TaskFilter } from '../types/task.js';
-import type { TaskStatus, TaskType } from '../types/enums.js';
+import { RANK_GAP, TERMINAL_STATUSES } from '../types/enums.js';
 import { AppError } from '../errors/app-error.js';
-import { ulid } from 'ulid';
 import { logger } from '../logging/logger.js';
+import { NOT_DELETED, type TaskRow, rowToTask } from './shared.js';
 
-interface TaskRow {
-  id: string;
-  project_id: string;
-  parent_id: string | null;
-  name: string;
-  description: string;
-  type: string;
-  status: string;
-  priority: number;
-  technical_notes: string;
-  additional_requirements: string;
-  created_at: string;
-  updated_at: string;
-}
+const TERMINAL_STATUS_ARRAY = [...TERMINAL_STATUSES];
+const TERMINAL_PLACEHOLDERS = TERMINAL_STATUS_ARRAY.map(() => '?').join(', ');
 
-function rowToTask(row: TaskRow): Task {
-  return {
-    id: row.id,
-    projectId: row.project_id,
-    parentId: row.parent_id,
-    name: row.name,
-    description: row.description,
-    type: row.type as TaskType,
-    status: row.status as TaskStatus,
-    priority: row.priority,
-    technicalNotes: row.technical_notes,
-    additionalRequirements: row.additional_requirements,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
+export interface SearchResult {
+  task: Task;
+  rank: number;
 }
 
 export interface TaskRepository {
-  insert(input: CreateTaskInput & { projectId: string }): Result<Task>;
+  insert(id: string, input: CreateTaskInput & { projectId: string }): Result<Task>;
   findById(id: string): Result<Task | null>;
   findMany(filter: TaskFilter): Result<Task[]>;
   update(id: string, input: UpdateTaskInput): Result<Task>;
   delete(id: string): Result<void>;
+  rerank(taskId: string, newRank: number): Result<Task>;
+  getMaxRank(projectId: string): Result<number>;
+  /** Max rank among non-terminal (not done/cancelled) tasks. Returns 0 if none. */
+  getMaxActiveRank(projectId: string): Result<number>;
+  /** Min rank among terminal (done/cancelled) tasks. Returns null if none. */
+  getMinTerminalRank(projectId: string): Result<number | null>;
+  getRankedTasks(projectId: string, status?: string): Result<Task[]>;
+  /** FTS5 ranked search across all text fields */
+  search(query: string, projectId?: string): Result<SearchResult[]>;
 }
 
 export class SqliteTaskRepository implements TaskRepository {
   constructor(private readonly db: Database.Database) {}
 
-  insert(input: CreateTaskInput & { projectId: string }): Result<Task> {
+  insert(id: string, input: CreateTaskInput & { projectId: string }): Result<Task> {
     return logger.startSpan('TaskRepository.insert', () => {
       try {
         const now = new Date().toISOString();
-        const id = ulid();
+
+        // New tasks go after the last active task but before terminal (done/cancelled) tasks
+        const maxActiveResult = this.getMaxActiveRank(input.projectId);
+        if (!maxActiveResult.ok) return maxActiveResult;
+        const maxActiveRank = maxActiveResult.value;
+
+        const minTerminalResult = this.getMinTerminalRank(input.projectId);
+        if (!minTerminalResult.ok) return minTerminalResult;
+        const minTerminalRank = minTerminalResult.value;
+
+        let rank: number;
+        if (minTerminalRank !== null && minTerminalRank > maxActiveRank) {
+          rank =
+            maxActiveRank > 0 ? (maxActiveRank + minTerminalRank) / 2 : minTerminalRank - RANK_GAP;
+        } else {
+          rank = maxActiveRank + RANK_GAP;
+        }
 
         this.db
           .prepare(
-            `INSERT INTO tasks (id, project_id, parent_id, name, description, type, status, priority, technical_notes, additional_requirements, created_at, updated_at)
+            `INSERT INTO tasks (id, project_id, parent_id, name, description, type, status, rank, technical_notes, additional_requirements, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
@@ -69,7 +70,7 @@ export class SqliteTaskRepository implements TaskRepository {
             input.description ?? '',
             input.type,
             input.status,
-            input.priority,
+            rank,
             input.technicalNotes ?? '',
             input.additionalRequirements ?? '',
             now,
@@ -91,7 +92,7 @@ export class SqliteTaskRepository implements TaskRepository {
 
   findById(id: string): Result<Task | null> {
     try {
-      const row = this.db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as
+      const row = this.db.prepare(`SELECT * FROM tasks WHERE id = ? AND ${NOT_DELETED}`).get(id) as
         | TaskRow
         | undefined;
       return ok(row ? rowToTask(row) : null);
@@ -102,7 +103,7 @@ export class SqliteTaskRepository implements TaskRepository {
 
   findMany(filter: TaskFilter): Result<Task[]> {
     try {
-      const conditions: string[] = [];
+      const conditions: string[] = [NOT_DELETED];
       const params: unknown[] = [];
 
       if (filter.projectId) {
@@ -117,22 +118,23 @@ export class SqliteTaskRepository implements TaskRepository {
         conditions.push('type = ?');
         params.push(filter.type);
       }
-      if (filter.priority) {
-        conditions.push('priority = ?');
-        params.push(filter.priority);
-      }
       if (filter.parentId) {
         conditions.push('parent_id = ?');
         params.push(filter.parentId);
       }
       if (filter.search) {
-        conditions.push('(name LIKE ? OR description LIKE ? OR technical_notes LIKE ?)');
-        const searchTerm = `%${filter.search}%`;
-        params.push(searchTerm, searchTerm, searchTerm);
+        // Use FTS5 for tokenized, ranked search with prefix matching
+        const ftsQuery = filter.search
+          .trim()
+          .split(/\s+/)
+          .map((term) => `"${term.replace(/"/g, '""')}"*`)
+          .join(' ');
+        conditions.push(`id IN (SELECT id FROM tasks_fts WHERE tasks_fts MATCH ?)`);
+        params.push(ftsQuery);
       }
 
       const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-      const sql = `SELECT * FROM tasks ${where} ORDER BY priority ASC, created_at DESC`;
+      const sql = `SELECT * FROM tasks ${where} ORDER BY rank ASC`;
 
       const rows = this.db.prepare(sql).all(...params) as TaskRow[];
       return ok(rows.map(rowToTask));
@@ -144,9 +146,9 @@ export class SqliteTaskRepository implements TaskRepository {
   update(id: string, input: UpdateTaskInput): Result<Task> {
     return logger.startSpan('TaskRepository.update', () => {
       try {
-        const existing = this.db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as
-          | TaskRow
-          | undefined;
+        const existing = this.db
+          .prepare(`SELECT * FROM tasks WHERE id = ? AND ${NOT_DELETED}`)
+          .get(id) as TaskRow | undefined;
         if (!existing) {
           return err(new AppError('NOT_FOUND', `Task not found: ${id}`));
         }
@@ -173,7 +175,7 @@ export class SqliteTaskRepository implements TaskRepository {
         this.db
           .prepare(
             `UPDATE tasks SET
-               name = ?, description = ?, type = ?, status = ?, priority = ?,
+               name = ?, description = ?, type = ?, status = ?,
                parent_id = ?, technical_notes = ?, additional_requirements = ?, updated_at = ?
              WHERE id = ?`,
           )
@@ -182,7 +184,6 @@ export class SqliteTaskRepository implements TaskRepository {
             input.description ?? existing.description,
             input.type ?? existing.type,
             input.status ?? existing.status,
-            input.priority ?? existing.priority,
             input.parentId !== undefined ? input.parentId : existing.parent_id,
             technicalNotes,
             additionalRequirements,
@@ -206,16 +207,142 @@ export class SqliteTaskRepository implements TaskRepository {
   delete(id: string): Result<void> {
     return logger.startSpan('TaskRepository.delete', () => {
       try {
-        const existing = this.db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as
-          | TaskRow
-          | undefined;
+        const existing = this.db
+          .prepare(`SELECT * FROM tasks WHERE id = ? AND ${NOT_DELETED}`)
+          .get(id) as TaskRow | undefined;
         if (!existing) {
           return err(new AppError('NOT_FOUND', `Task not found: ${id}`));
         }
-        this.db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
+        const now = new Date().toISOString();
+        this.db
+          .prepare('UPDATE tasks SET deleted_at = ?, updated_at = ? WHERE id = ?')
+          .run(now, now, id);
         return ok(undefined);
       } catch (e) {
         return err(new AppError('DB_ERROR', 'Failed to delete task', e));
+      }
+    });
+  }
+
+  rerank(taskId: string, newRank: number): Result<Task> {
+    return logger.startSpan('TaskRepository.rerank', () => {
+      try {
+        const now = new Date().toISOString();
+        const existing = this.db
+          .prepare(`SELECT * FROM tasks WHERE id = ? AND ${NOT_DELETED}`)
+          .get(taskId) as TaskRow | undefined;
+        if (!existing) {
+          return err(new AppError('NOT_FOUND', `Task not found: ${taskId}`));
+        }
+        this.db
+          .prepare('UPDATE tasks SET rank = ?, updated_at = ? WHERE id = ?')
+          .run(newRank, now, taskId);
+
+        const row = this.db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as
+          | TaskRow
+          | undefined;
+        if (!row) {
+          return err(new AppError('DB_ERROR', 'Failed to retrieve reranked task'));
+        }
+        return ok(rowToTask(row));
+      } catch (e) {
+        return err(new AppError('DB_ERROR', 'Failed to rerank task', e));
+      }
+    });
+  }
+
+  getMaxRank(projectId: string): Result<number> {
+    try {
+      const row = this.db
+        .prepare(`SELECT MAX(rank) as max_rank FROM tasks WHERE project_id = ? AND ${NOT_DELETED}`)
+        .get(projectId) as { max_rank: number | null } | undefined;
+      return ok(row?.max_rank ?? 0);
+    } catch (e) {
+      return err(new AppError('DB_ERROR', 'Failed to get max rank', e));
+    }
+  }
+
+  getMaxActiveRank(projectId: string): Result<number> {
+    try {
+      const row = this.db
+        .prepare(
+          `SELECT MAX(rank) as max_rank FROM tasks WHERE project_id = ? AND ${NOT_DELETED} AND status NOT IN (${TERMINAL_PLACEHOLDERS})`,
+        )
+        .get(projectId, ...TERMINAL_STATUS_ARRAY) as { max_rank: number | null } | undefined;
+      return ok(row?.max_rank ?? 0);
+    } catch (e) {
+      return err(new AppError('DB_ERROR', 'Failed to get max active rank', e));
+    }
+  }
+
+  getMinTerminalRank(projectId: string): Result<number | null> {
+    try {
+      const row = this.db
+        .prepare(
+          `SELECT MIN(rank) as min_rank FROM tasks WHERE project_id = ? AND ${NOT_DELETED} AND status IN (${TERMINAL_PLACEHOLDERS})`,
+        )
+        .get(projectId, ...TERMINAL_STATUS_ARRAY) as { min_rank: number | null } | undefined;
+      return ok(row?.min_rank ?? null);
+    } catch (e) {
+      return err(new AppError('DB_ERROR', 'Failed to get min terminal rank', e));
+    }
+  }
+
+  getRankedTasks(projectId: string, status?: string): Result<Task[]> {
+    try {
+      let sql: string;
+      let params: unknown[];
+      if (status) {
+        sql = `SELECT * FROM tasks WHERE project_id = ? AND ${NOT_DELETED} AND status = ? ORDER BY rank ASC`;
+        params = [projectId, status];
+      } else {
+        sql = `SELECT * FROM tasks WHERE project_id = ? AND ${NOT_DELETED} ORDER BY rank ASC`;
+        params = [projectId];
+      }
+      const rows = this.db.prepare(sql).all(...params) as TaskRow[];
+      return ok(rows.map(rowToTask));
+    } catch (e) {
+      return err(new AppError('DB_ERROR', 'Failed to get ranked tasks', e));
+    }
+  }
+
+  search(query: string, projectId?: string): Result<SearchResult[]> {
+    return logger.startSpan('TaskRepository.search', () => {
+      try {
+        const ftsQuery = query
+          .trim()
+          .split(/\s+/)
+          .map((term) => `"${term.replace(/"/g, '""')}"*`)
+          .join(' ');
+
+        let sql: string;
+        let params: unknown[];
+
+        if (projectId) {
+          sql = `SELECT t.*, bm25(tasks_fts) AS fts_rank
+                 FROM tasks_fts f
+                 JOIN tasks t ON t.id = f.id AND t.deleted_at IS NULL
+                 WHERE tasks_fts MATCH ? AND t.project_id = ?
+                 ORDER BY fts_rank ASC`;
+          params = [ftsQuery, projectId];
+        } else {
+          sql = `SELECT t.*, bm25(tasks_fts) AS fts_rank
+                 FROM tasks_fts f
+                 JOIN tasks t ON t.id = f.id AND t.deleted_at IS NULL
+                 WHERE tasks_fts MATCH ?
+                 ORDER BY fts_rank ASC`;
+          params = [ftsQuery];
+        }
+
+        const rows = this.db.prepare(sql).all(...params) as (TaskRow & { fts_rank: number })[];
+        return ok(
+          rows.map((row) => ({
+            task: rowToTask(row),
+            rank: row.fts_rank,
+          })),
+        );
+      } catch (e) {
+        return err(new AppError('DB_ERROR', 'Full-text search failed', e));
       }
     });
   }
