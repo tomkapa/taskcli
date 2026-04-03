@@ -4,3 +4,4 @@
 - Prefer strict type to capture potential error at compile time
 - fmt and lint MUST be run before exit
 - Action and result MUST consistent between TUI and CLI command.
+- Use TDD to drive development, all code MUST be covered by test, and all test MUST be passed before exit

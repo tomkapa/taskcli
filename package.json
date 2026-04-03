@@ -1,11 +1,14 @@
 {
-  "name": "task",
+  "name": "tayto",
   "version": "0.1.0",
   "description": "CLI tool for task management - for solo devs and AI agents",
   "type": "module",
   "bin": {
-    "task": "./dist/index.js"
+    "tayto": "./dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -16,7 +19,7 @@
     "test:watch": "vitest"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=25"
   },
   "license": "MIT",
   "dependencies": {
@@ -38,7 +41,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^25.5.0",
+    "@types/node": "^25.5.1",
     "@types/react": "^19.2.14",
     "eslint": "^10.1.0",
     "ink-testing-library": "^4.0.0",

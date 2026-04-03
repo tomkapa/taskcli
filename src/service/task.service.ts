@@ -12,7 +12,7 @@ import type { ProjectService } from './project.service.js';
 import type { DependencyService } from './dependency.service.js';
 import { AppError } from '../errors/app-error.js';
 import { logger } from '../logging/logger.js';
-import { TaskStatus, RANK_GAP, isTerminalStatus, UIDependencyType, DependencyType } from '../types/enums.js';
+import { TaskStatus, RANK_GAP, isTerminalStatus } from '../types/enums.js';
 
 export interface TaskService {
   createTask(input: unknown, projectIdOrName?: string): Result<Task>;
@@ -63,13 +63,10 @@ export class TaskServiceImpl implements TaskService {
 
       if (parsed.data.dependsOn && parsed.data.dependsOn.length > 0) {
         for (const entry of parsed.data.dependsOn) {
-          // blocked-by is a UI-only type: the new task blocks the picked task,
-          // so we store the relationship in reverse (picked depends on new task).
-          const isBlockedBy = entry.type === UIDependencyType.BlockedBy;
           const depResult = this.getDependencyService().addDependency({
-            taskId: isBlockedBy ? entry.id : insertResult.value.id,
-            dependsOnId: isBlockedBy ? insertResult.value.id : entry.id,
-            type: isBlockedBy ? DependencyType.Blocks : entry.type,
+            taskId: insertResult.value.id,
+            dependsOnId: entry.id,
+            type: entry.type,
           });
           if (!depResult.ok) return depResult;
         }
@@ -114,6 +111,18 @@ export class TaskServiceImpl implements TaskService {
       const parsed = UpdateTaskSchema.safeParse(input);
       if (!parsed.success) {
         return err(new AppError('VALIDATION', parsed.error.message));
+      }
+
+      // Enforce: cannot start a task that still has unfinished blockers.
+      if (parsed.data.status === TaskStatus.InProgress) {
+        const blockersResult = this.getDependencyService().listBlockers(id);
+        if (!blockersResult.ok) return blockersResult;
+        const hasNonTerminalBlocker = blockersResult.value.some((b) => !isTerminalStatus(b.status));
+        if (hasNonTerminalBlocker) {
+          return err(
+            new AppError('VALIDATION', 'Task is blocked by unfinished dependencies'),
+          );
+        }
       }
 
       // Check if transitioning to terminal status (done/cancelled)

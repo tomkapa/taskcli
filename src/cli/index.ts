@@ -4,6 +4,7 @@ import { registerProjectCreate } from './commands/project/create.js';
 import { registerProjectList } from './commands/project/list.js';
 import { registerProjectUpdate } from './commands/project/update.js';
 import { registerProjectDelete } from './commands/project/delete.js';
+import { registerProjectSetDefault } from './commands/project/set-default.js';
 import { registerTaskCreate } from './commands/task/create.js';
 import { registerTaskList } from './commands/task/list.js';
 import { registerTaskShow } from './commands/task/show.js';
@@ -22,7 +23,7 @@ import { registerDepGraph } from './commands/dep/graph.js';
 export function buildCLI(container: Container): Command {
   const program = new Command();
   program
-    .name('task')
+    .name('tayto')
     .description('CLI task management for solo devs and AI agents')
     .version('0.1.0');
 
@@ -31,6 +32,7 @@ export function buildCLI(container: Container): Command {
   registerProjectList(project, container);
   registerProjectUpdate(project, container);
   registerProjectDelete(project, container);
+  registerProjectSetDefault(project, container);
 
   const task = program.command('task').description('Manage tasks');
   registerTaskCreate(task, container);

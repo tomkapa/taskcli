@@ -7,6 +7,7 @@ import type { DependencyRepository } from '../repository/dependency.repository.j
 import type { TaskRepository } from '../repository/task.repository.js';
 import { AppError } from '../errors/app-error.js';
 import { logger } from '../logging/logger.js';
+import { UIDependencyType, DependencyType } from '../types/enums.js';
 
 export interface DependencyEdge {
   from: string;
@@ -23,6 +24,8 @@ export interface DependencyGraph {
 export interface DependencyService {
   addDependency(input: unknown): Result<TaskDependency>;
   removeDependency(input: unknown): Result<void>;
+  /** Remove a dependency between two tasks regardless of which direction it was stored. */
+  removeDependencyBetween(taskId: string, otherId: string): Result<void>;
   listBlockers(taskId: string): Result<Task[]>;
   listDependents(taskId: string): Result<Task[]>;
   listRelated(taskId: string): Result<Task[]>;
@@ -49,7 +52,11 @@ export class DependencyServiceImpl implements DependencyService {
 
   addDependency(input: unknown): Result<TaskDependency> {
     return logger.startSpan('DependencyService.addDependency', () => {
-      const parsed = AddDependencySchema.safeParse(input);
+      // Normalize blocked-by: callers express "A is blocked-by B" as
+      // {taskId: A, dependsOnId: B, type: blocked-by}; we store it as
+      // {taskId: B, dependsOnId: A, type: blocks} (B blocks A).
+      const normalized = normalizeBlockedBy(input);
+      const parsed = AddDependencySchema.safeParse(normalized);
       if (!parsed.success) {
         return err(new AppError('VALIDATION', parsed.error.message));
       }
@@ -84,6 +91,14 @@ export class DependencyServiceImpl implements DependencyService {
         return err(new AppError('VALIDATION', parsed.error.message));
       }
       return this.depRepo.delete(parsed.data.taskId, parsed.data.dependsOnId);
+    });
+  }
+
+  removeDependencyBetween(taskId: string, otherId: string): Result<void> {
+    return logger.startSpan('DependencyService.removeDependencyBetween', () => {
+      const forward = this.depRepo.delete(taskId, otherId);
+      if (forward.ok) return forward;
+      return this.depRepo.delete(otherId, taskId);
     });
   }
 
@@ -201,4 +216,22 @@ export class DependencyServiceImpl implements DependencyService {
 
     return lines.join('\n');
   }
+}
+
+/**
+ * Normalizes a blocked-by relationship before schema validation.
+ * "A blocked-by B" is stored as "B blocks A": swap taskId/dependsOnId
+ * and change type from blocked-by to blocks.
+ */
+function normalizeBlockedBy(input: unknown): unknown {
+  if (
+    typeof input === 'object' &&
+    input !== null &&
+    'type' in input &&
+    (input as Record<string, unknown>).type === UIDependencyType.BlockedBy
+  ) {
+    const { taskId, dependsOnId, ...rest } = input as Record<string, unknown>;
+    return { ...rest, taskId: dependsOnId, dependsOnId: taskId, type: DependencyType.Blocks };
+  }
+  return input;
 }

@@ -167,6 +167,42 @@ describe('TaskService', () => {
     expect(result.value.status).toBe('in-progress');
   });
 
+  it('rejects transitioning to in-progress when non-terminal blockers exist', () => {
+    const blocker = container.taskService.createTask({ name: 'Blocker' });
+    const blocked = container.taskService.createTask({ name: 'Blocked' });
+    if (!blocker.ok || !blocked.ok) throw new Error('setup failed');
+
+    container.dependencyService.addDependency({
+      taskId: blocked.value.id,
+      dependsOnId: blocker.value.id,
+    });
+
+    const result = container.taskService.updateTask(blocked.value.id, { status: 'in-progress' });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('VALIDATION');
+    expect(result.error.message).toContain('blocked');
+  });
+
+  it('allows transitioning to in-progress when all blockers are terminal', () => {
+    const blocker = container.taskService.createTask({ name: 'Blocker' });
+    const blocked = container.taskService.createTask({ name: 'Blocked' });
+    if (!blocker.ok || !blocked.ok) throw new Error('setup failed');
+
+    container.dependencyService.addDependency({
+      taskId: blocked.value.id,
+      dependsOnId: blocker.value.id,
+    });
+
+    // Mark blocker as done
+    container.taskService.updateTask(blocker.value.id, { status: 'done' });
+
+    const result = container.taskService.updateTask(blocked.value.id, { status: 'in-progress' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('in-progress');
+  });
+
   it('appends to technical notes', () => {
     const created = container.taskService.createTask({
       name: 'Task',

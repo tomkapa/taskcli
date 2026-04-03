@@ -89,7 +89,12 @@ export function DependencyList({
           <Text dimColor> No blockers</Text>
         ) : (
           blockers.map((t, i) => (
-            <TaskRow key={t.id} task={t} globalIndex={blockersOffset + i} selectedIndex={selectedIndex} />
+            <TaskRow
+              key={t.id}
+              task={t}
+              globalIndex={blockersOffset + i}
+              selectedIndex={selectedIndex}
+            />
           ))
         )}
       </Box>
@@ -103,7 +108,12 @@ export function DependencyList({
           <Text dimColor> No dependents</Text>
         ) : (
           dependents.map((t, i) => (
-            <TaskRow key={t.id} task={t} globalIndex={dependentsOffset + i} selectedIndex={selectedIndex} />
+            <TaskRow
+              key={t.id}
+              task={t}
+              globalIndex={dependentsOffset + i}
+              selectedIndex={selectedIndex}
+            />
           ))
         )}
       </Box>
@@ -117,7 +127,12 @@ export function DependencyList({
           <Text dimColor> No related tasks</Text>
         ) : (
           related.map((t, i) => (
-            <TaskRow key={t.id} task={t} globalIndex={relatedOffset + i} selectedIndex={selectedIndex} />
+            <TaskRow
+              key={t.id}
+              task={t}
+              globalIndex={relatedOffset + i}
+              selectedIndex={selectedIndex}
+            />
           ))
         )}
       </Box>
@@ -131,7 +146,12 @@ export function DependencyList({
           <Text dimColor> No duplicate tasks</Text>
         ) : (
           duplicates.map((t, i) => (
-            <TaskRow key={t.id} task={t} globalIndex={duplicatesOffset + i} selectedIndex={selectedIndex} />
+            <TaskRow
+              key={t.id}
+              task={t}
+              globalIndex={duplicatesOffset + i}
+              selectedIndex={selectedIndex}
+            />
           ))
         )}
       </Box>

@@ -1,10 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import type { Task } from '../../src/types/task.js';
 import type { Project } from '../../src/types/project.js';
 import { TaskList } from '../../src/tui/components/TaskList.js';
 import { TaskDetail } from '../../src/tui/components/TaskDetail.js';
 import { TaskForm } from '../../src/tui/components/TaskForm.js';
+import { TaskPicker } from '../../src/tui/components/TaskPicker.js';
 import { ProjectSelector } from '../../src/tui/components/ProjectSelector.js';
 import { Header } from '../../src/tui/components/Header.js';
 import { Crumbs } from '../../src/tui/components/Crumbs.js';
@@ -104,6 +105,9 @@ describe('TUI Component Rendering', () => {
           isReordering={false}
           filter={{}}
           activeProjectName="My App"
+          nonTerminalBlockerIds={new Set()}
+          nonTerminalDependentIds={new Set()}
+          isSelectedBlocked={false}
         />,
       );
       const frame = lastFrame();
@@ -122,6 +126,9 @@ describe('TUI Component Rendering', () => {
           isReordering={false}
           filter={{}}
           activeProjectName="My App"
+          nonTerminalBlockerIds={new Set()}
+          nonTerminalDependentIds={new Set()}
+          isSelectedBlocked={false}
         />,
       );
       expect(lastFrame()).toContain('No tasks found');
@@ -137,6 +144,9 @@ describe('TUI Component Rendering', () => {
           isReordering={false}
           filter={{}}
           activeProjectName="My App"
+          nonTerminalBlockerIds={new Set()}
+          nonTerminalDependentIds={new Set()}
+          isSelectedBlocked={false}
         />,
       );
       expect(lastFrame()).toContain('login');
@@ -152,6 +162,9 @@ describe('TUI Component Rendering', () => {
           isReordering={false}
           filter={{ status: 'todo', type: 'bug' }}
           activeProjectName="My App"
+          nonTerminalBlockerIds={new Set()}
+          nonTerminalDependentIds={new Set()}
+          isSelectedBlocked={false}
         />,
       );
       const frame = lastFrame() ?? '';
@@ -162,7 +175,14 @@ describe('TUI Component Rendering', () => {
     it('renders multiple tasks with selection indicator', () => {
       const tasks = [
         mockTask,
-        { ...mockTask, id: 'task-2', name: 'Add dashboard', type: 'story' as const, status: 'todo' as const, rank: 2000 },
+        {
+          ...mockTask,
+          id: 'task-2',
+          name: 'Add dashboard',
+          type: 'story' as const,
+          status: 'todo' as const,
+          rank: 2000,
+        },
       ];
       const { lastFrame } = render(
         <TaskList
@@ -173,6 +193,9 @@ describe('TUI Component Rendering', () => {
           isReordering={false}
           filter={{}}
           activeProjectName="My App"
+          nonTerminalBlockerIds={new Set()}
+          nonTerminalDependentIds={new Set()}
+          isSelectedBlocked={false}
         />,
       );
       const frame = lastFrame() ?? '';
@@ -190,6 +213,9 @@ describe('TUI Component Rendering', () => {
           isReordering={true}
           filter={{}}
           activeProjectName="My App"
+          nonTerminalBlockerIds={new Set()}
+          nonTerminalDependentIds={new Set()}
+          isSelectedBlocked={false}
         />,
       );
       const frame = lastFrame() ?? '';
@@ -228,12 +254,54 @@ describe('TUI Component Rendering', () => {
       expect(frame).toContain('type');
       expect(frame).toContain('status');
     });
+
+    it('renders blockers and dependents in dependencies section', () => {
+      const blocker: Task = { ...mockTask, id: 'T-010', name: 'Blocker task' };
+      const dependent: Task = { ...mockTask, id: 'T-011', name: 'Dependent task' };
+      const { lastFrame } = render(
+        <TaskDetail task={mockTask} blockers={[blocker]} dependents={[dependent]} />,
+      );
+      const frame = lastFrame() ?? '';
+      expect(frame).toContain('blocked by');
+      expect(frame).toContain('T-010');
+      expect(frame).toContain('blocks');
+      expect(frame).toContain('T-011');
+    });
+
+    it('renders relates-to dependencies', () => {
+      // Regression: TaskDetail previously only accepted blockers/dependents,
+      // so relates-to tasks were never shown in the detail view.
+      const related: Task = { ...mockTask, id: 'T-020', name: 'Related task' };
+      const { lastFrame } = render(<TaskDetail task={mockTask} related={[related]} />);
+      const frame = lastFrame() ?? '';
+      expect(frame).toContain('relates to');
+      expect(frame).toContain('T-020');
+    });
+
+    it('renders duplicates dependencies', () => {
+      // Regression: TaskDetail previously only accepted blockers/dependents,
+      // so duplicates tasks were never shown in the detail view.
+      const dup: Task = { ...mockTask, id: 'T-030', name: 'Duplicate task' };
+      const { lastFrame } = render(<TaskDetail task={mockTask} duplicates={[dup]} />);
+      const frame = lastFrame() ?? '';
+      expect(frame).toContain('duplicates');
+      expect(frame).toContain('T-030');
+    });
+
+    it('shows dependencies section only when at least one dep type is present', () => {
+      const { lastFrame } = render(<TaskDetail task={mockTask} />);
+      expect(lastFrame()).not.toContain('--- dependencies ---');
+
+      const related: Task = { ...mockTask, id: 'T-040', name: 'Related' };
+      const { lastFrame: withDeps } = render(<TaskDetail task={mockTask} related={[related]} />);
+      expect(withDeps()).toContain('--- dependencies ---');
+    });
   });
 
   describe('TaskForm', () => {
     it('renders create form', () => {
       const { lastFrame } = render(
-        <TaskForm editingTask={null} onSave={() => {}} onCancel={() => {}} />,
+        <TaskForm editingTask={null} allTasks={[]} onSave={() => {}} onCancel={() => {}} />,
       );
       const frame = lastFrame();
       expect(frame).toContain('create');
@@ -245,7 +313,7 @@ describe('TUI Component Rendering', () => {
 
     it('renders edit form with existing data', () => {
       const { lastFrame } = render(
-        <TaskForm editingTask={mockTask} onSave={() => {}} onCancel={() => {}} />,
+        <TaskForm editingTask={mockTask} allTasks={[]} onSave={() => {}} onCancel={() => {}} />,
       );
       const frame = lastFrame();
       expect(frame).toContain('edit');
@@ -254,7 +322,7 @@ describe('TUI Component Rendering', () => {
 
     it('shows $EDITOR hint for long text fields', () => {
       const { lastFrame } = render(
-        <TaskForm editingTask={null} onSave={() => {}} onCancel={() => {}} />,
+        <TaskForm editingTask={null} allTasks={[]} onSave={() => {}} onCancel={() => {}} />,
       );
       const frame = lastFrame();
       expect(frame).toContain('Description');
@@ -264,10 +332,99 @@ describe('TUI Component Rendering', () => {
 
     it('shows preview of existing editor content', () => {
       const { lastFrame } = render(
-        <TaskForm editingTask={mockTask} onSave={() => {}} onCancel={() => {}} />,
+        <TaskForm editingTask={mockTask} allTasks={[]} onSave={() => {}} onCancel={() => {}} />,
       );
       const frame = lastFrame();
       expect(frame).toContain('Login fails');
+    });
+
+    it('pre-populates dependency field from initialDeps when editing', () => {
+      // Regression: edit form previously always started with empty pickedDeps,
+      // so existing dependencies were never shown in the Depends On field.
+      const initialDeps = [{ id: 'T-099', name: 'Blocker task', type: 'blocks' }];
+      const { lastFrame } = render(
+        <TaskForm
+          editingTask={mockTask}
+          allTasks={[]}
+          initialDeps={initialDeps}
+          onSave={() => {}}
+          onCancel={() => {}}
+        />,
+      );
+      expect(lastFrame()).toContain('T-099');
+    });
+
+    it('shows empty dependency field when no initialDeps provided', () => {
+      const { lastFrame } = render(
+        <TaskForm editingTask={mockTask} allTasks={[]} onSave={() => {}} onCancel={() => {}} />,
+      );
+      expect(lastFrame()).toContain('none');
+    });
+  });
+
+  describe('TaskPicker', () => {
+    const task1: Task = { ...mockTask, id: 'T-001', name: 'First task' };
+    const task2: Task = {
+      ...mockTask,
+      id: 'T-002',
+      name: 'Second task',
+      status: 'todo',
+    };
+
+    it('renders available tasks', () => {
+      const { lastFrame } = render(
+        <TaskPicker tasks={[task1, task2]} onConfirm={() => {}} onCancel={() => {}} />,
+      );
+      const frame = lastFrame() ?? '';
+      expect(frame).toContain('First task');
+      expect(frame).toContain('Second task');
+    });
+
+    it('renders all tasks passed in the tasks prop', () => {
+      // This test guards against the bug where allProjectTasks was stale-memoized
+      // in App.tsx and newly created tasks were not shown in the picker.
+      // The picker must render whatever tasks it receives — if the prop is stale,
+      // newly created tasks will be absent from the frame.
+      const newlyCreated: Task = { ...mockTask, id: 'T-003', name: 'Newly created task' };
+      const { lastFrame } = render(
+        <TaskPicker
+          tasks={[task1, task2, newlyCreated]}
+          onConfirm={() => {}}
+          onCancel={() => {}}
+        />,
+      );
+      const frame = lastFrame() ?? '';
+      expect(frame).toContain('First task');
+      expect(frame).toContain('Second task');
+      expect(frame).toContain('Newly created task');
+    });
+
+    it('renders empty state when no tasks', () => {
+      const { lastFrame } = render(
+        <TaskPicker tasks={[]} onConfirm={() => {}} onCancel={() => {}} />,
+      );
+      expect(lastFrame()).toContain('No tasks match');
+    });
+
+    it('excludes tasks in excludeIds', () => {
+      const { lastFrame } = render(
+        <TaskPicker
+          tasks={[task1, task2]}
+          excludeIds={new Set([task1.id])}
+          onConfirm={() => {}}
+          onCancel={() => {}}
+        />,
+      );
+      const frame = lastFrame() ?? '';
+      expect(frame).not.toContain('First task');
+      expect(frame).toContain('Second task');
+    });
+
+    it('renders task ids in the picker', () => {
+      const { lastFrame } = render(
+        <TaskPicker tasks={[task1]} onConfirm={() => {}} onCancel={() => {}} />,
+      );
+      expect(lastFrame()).toContain('T-001');
     });
   });
 
@@ -278,6 +435,8 @@ describe('TUI Component Rendering', () => {
           projects={[mockProject]}
           activeProject={mockProject}
           onSelect={() => {}}
+          onCreate={() => {}}
+          onSetDefault={() => {}}
           onCancel={() => {}}
         />,
       );
@@ -292,10 +451,56 @@ describe('TUI Component Rendering', () => {
           projects={[]}
           activeProject={null}
           onSelect={() => {}}
+          onCreate={() => {}}
+          onSetDefault={() => {}}
           onCancel={() => {}}
         />,
       );
       expect(lastFrame()).toContain('No projects');
+    });
+
+    it('shows D marker for default project', () => {
+      const { lastFrame } = render(
+        <ProjectSelector
+          projects={[mockProject]}
+          activeProject={null}
+          onSelect={() => {}}
+          onCreate={() => {}}
+          onSetDefault={() => {}}
+          onCancel={() => {}}
+        />,
+      );
+      expect(lastFrame()).toContain('D');
+    });
+
+    it('shows set default hint text', () => {
+      const { lastFrame } = render(
+        <ProjectSelector
+          projects={[mockProject]}
+          activeProject={mockProject}
+          onSelect={() => {}}
+          onCreate={() => {}}
+          onSetDefault={() => {}}
+          onCancel={() => {}}
+        />,
+      );
+      expect(lastFrame()).toContain('set default');
+    });
+
+    it('calls onSetDefault when d is pressed', () => {
+      const onSetDefault = vi.fn();
+      const { stdin } = render(
+        <ProjectSelector
+          projects={[mockProject]}
+          activeProject={null}
+          onSelect={() => {}}
+          onCreate={() => {}}
+          onSetDefault={onSetDefault}
+          onCancel={() => {}}
+        />,
+      );
+      stdin.write('d');
+      expect(onSetDefault).toHaveBeenCalledWith(mockProject);
     });
   });
 

@@ -1,4 +1,4 @@
-# task
+# tayto
 
 Task management for solo developers and AI agents. Two interfaces, one database.
 
@@ -16,14 +16,14 @@ SQLite-backed. No server. No login. Just projects and tasks.
 npm install && npm run build
 
 # Create a project
-task project create -n "my-app" --default
+tayto project create -n "my-app" --default
 
 # Create tasks
-task task create -n "Fix auth bug" -t bug --priority 1
-task task create -n "Add dashboard" -t story --priority 2
+tayto task create -n "Fix auth bug" -t bug --priority 1
+tayto task create -n "Add dashboard" -t story --priority 2
 
 # Launch the terminal UI
-task
+tayto
 ```
 
 ## Installation
@@ -31,22 +31,22 @@ task
 **Requirements:** Node.js >= 18
 
 ```bash
-git clone <repo-url> && cd task
+git clone <repo-url> && cd tayto
 npm install
 npm run build
-npm link        # makes `task` available globally
+npm link        # makes `tayto` available globally
 ```
 
 ## Usage
 
 ### Terminal UI
 
-Run `task` with no arguments to launch the interactive TUI.
+Run `tayto` with no arguments to launch the interactive TUI.
 
 ```bash
-task                          # launch TUI (default)
-task tui                      # explicit launch
-task tui -p "my-app"          # start with a specific project
+tayto                          # launch TUI (default)
+tayto tui                      # explicit launch
+tayto tui -p "my-app"          # start with a specific project
 ```
 
 #### Keyboard Shortcuts
@@ -86,17 +86,17 @@ All commands output JSON to stdout. Errors go to stderr with exit code 1.
 #### Project
 
 ```bash
-task project create -n "my-app" -d "Description" --default
-task project list
-task project update <id> -n "new-name" --default
-task project delete <id>
+tayto project create -n "my-app" -d "Description" --default
+tayto project list
+tayto project update <id> -n "new-name" --default
+tayto project delete <id>
 ```
 
 #### Task
 
 ```bash
 # Create
-task task create \
+tayto task create \
   -n "Fix login bug" \
   -t bug \
   -s todo \
@@ -107,21 +107,21 @@ task task create \
   --additional-requirements "Must work on iOS Safari"
 
 # Read
-task task list
-task task list --status in-progress --type bug --search "login"
-task task list --priority 1 --parent <parent-id>
-task task show <id>
+tayto task list
+tayto task list --status in-progress --type bug --search "login"
+tayto task list --priority 1 --parent <parent-id>
+tayto task show <id>
 
 # Update
-task task update <id> -s in-progress
-task task update <id> --append-notes "Root cause: token not refreshed"
-task task update <id> --append-requirements "Also fix on Android"
+tayto task update <id> -s in-progress
+tayto task update <id> --append-notes "Root cause: token not refreshed"
+tayto task update <id> --append-requirements "Also fix on Android"
 
 # Delete
-task task delete <id>
+tayto task delete <id>
 
 # Breakdown (create subtasks from JSON)
-task task breakdown <parent-id> -f subtasks.json
+tayto task breakdown <parent-id> -f subtasks.json
 ```
 
 **subtasks.json** example:

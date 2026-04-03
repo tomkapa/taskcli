@@ -8,10 +8,18 @@ interface Props {
   activeProject: Project | null;
   onSelect: (project: Project) => void;
   onCreate: () => void;
+  onSetDefault: (project: Project) => void;
   onCancel: () => void;
 }
 
-export function ProjectSelector({ projects, activeProject, onSelect, onCreate, onCancel }: Props) {
+export function ProjectSelector({
+  projects,
+  activeProject,
+  onSelect,
+  onCreate,
+  onSetDefault,
+  onCancel,
+}: Props) {
   const [selectedIndex, setSelectedIndex] = useState(() => {
     if (!activeProject) return 0;
     const idx = projects.findIndex((p) => p.id === activeProject.id);
@@ -32,6 +40,13 @@ export function ProjectSelector({ projects, activeProject, onSelect, onCreate, o
     }
     if (input === 'c') {
       onCreate();
+      return;
+    }
+    if (input === 'd') {
+      const project = projects[selectedIndex];
+      if (project) {
+        onSetDefault(project);
+      }
       return;
     }
     if (key.upArrow || input === 'k') {
@@ -73,13 +88,16 @@ export function ProjectSelector({ projects, activeProject, onSelect, onCreate, o
         projects.map((project, i) => {
           const isSelected = i === selectedIndex;
           const isActive = project.id === activeProject?.id;
-          const marker = isActive ? '*' : ' ';
+          // * = active project, D = default project, combines to *D when both
+          const activeMarker = isActive ? '*' : ' ';
+          const defaultMarker = project.isDefault ? 'D' : ' ';
+          const marker = `${activeMarker}${defaultMarker}`;
 
           if (isSelected) {
             return (
               <Box key={project.id} paddingX={1}>
                 <Text backgroundColor={theme.table.cursorBg} color={theme.table.cursorFg} bold>
-                  {marker} {project.name.padEnd(28)}
+                  {marker} {project.name.padEnd(27)}
                   {project.description}
                 </Text>
               </Box>
@@ -89,7 +107,7 @@ export function ProjectSelector({ projects, activeProject, onSelect, onCreate, o
           return (
             <Box key={project.id} paddingX={1}>
               <Text color={isActive ? theme.status.modified : theme.table.fg}>
-                {marker} {project.name.padEnd(28)}
+                {marker} {project.name.padEnd(27)}
               </Text>
               <Text dimColor>{project.description}</Text>
             </Box>
@@ -100,7 +118,7 @@ export function ProjectSelector({ projects, activeProject, onSelect, onCreate, o
       <Box flexGrow={1} />
 
       <Box paddingX={1}>
-        <Text dimColor>enter: select | c: create | esc: back</Text>
+        <Text dimColor>enter: select | d: set default | c: create | esc: back</Text>
       </Box>
     </Box>
   );

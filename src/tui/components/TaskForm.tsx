@@ -13,6 +13,8 @@ interface Props {
   editingTask: Task | null;
   /** All project tasks, used by the dependency picker */
   allTasks: Task[];
+  /** Pre-populated dependencies when editing an existing task */
+  initialDeps?: PickedDependency[];
   onSave: (data: {
     name: string;
     description: string;
@@ -55,7 +57,7 @@ const FIELDS: Field[] = [
   },
 ];
 
-export function TaskForm({ editingTask, allTasks, onSave, onCancel }: Props) {
+export function TaskForm({ editingTask, allTasks, initialDeps, onSave, onCancel }: Props) {
   const [focusIndex, setFocusIndex] = useState(0);
   const [values, setValues] = useState<Record<string, string>>({
     name: editingTask?.name ?? '',
@@ -67,7 +69,7 @@ export function TaskForm({ editingTask, allTasks, onSave, onCancel }: Props) {
   });
   const [editorActive, setEditorActive] = useState(false);
   const [pickerActive, setPickerActive] = useState(false);
-  const [pickedDeps, setPickedDeps] = useState<PickedDependency[]>([]);
+  const [pickedDeps, setPickedDeps] = useState(initialDeps ?? []);
 
   const currentField = FIELDS[focusIndex];
 
@@ -118,19 +120,15 @@ export function TaskForm({ editingTask, allTasks, onSave, onCancel }: Props) {
       if (input === 's' && key.ctrl) {
         const nameVal = values['name'];
         if (typeof nameVal === 'string' && nameVal.trim()) {
-          const baseData = {
+          onSave({
             name: nameVal,
             description: values['description'] ?? '',
             type: values['type'] ?? TaskType.Story,
             status: values['status'] ?? TaskStatus.Backlog,
             technicalNotes: values['technicalNotes'] ?? '',
             additionalRequirements: values['additionalRequirements'] ?? '',
-          };
-          if (pickedDeps.length > 0) {
-            onSave({ ...baseData, dependsOn: pickedDeps.map((d) => ({ id: d.id, type: d.type })) });
-          } else {
-            onSave(baseData);
-          }
+            dependsOn: pickedDeps.map((d) => ({ id: d.id, type: d.type })),
+          });
         }
         return;
       }

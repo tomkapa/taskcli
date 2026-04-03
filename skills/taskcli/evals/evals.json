@@ -1,0 +1,53 @@
+{
+  "skill_name": "taskcli",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I need to implement the authentication feature. Before I start, search for any existing tasks related to auth, show me the most relevant one's details, check its dependencies, and then mark it as in-progress.",
+      "expected_output": "Agent runs `tayto task search auth`, shows results, runs `tayto task show` on the relevant task, runs `tayto dep list` or `tayto dep graph` on it, then runs `tayto task update <id> -s in-progress`.",
+      "files": [],
+      "assertions": [
+        "Agent ran `tayto task search` before creating or modifying anything",
+        "Agent ran `tayto task show <id>` on the relevant task",
+        "Agent checked dependencies using `tayto dep list` or `tayto dep graph`",
+        "Agent ran `tayto task update <id> -s in-progress`"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Break down the 'Build REST API' task into subtasks: design schema, implement endpoints, add validation, write tests. Add dependencies between them in logical order and rank them accordingly.",
+      "expected_output": "Agent writes a breakdown JSON, runs `tayto task breakdown`, adds deps in correct logical order, and re-ranks subtasks.",
+      "files": [],
+      "assertions": [
+        "Agent used `tayto task breakdown` with a JSON file",
+        "Agent added dependencies in a logically correct order",
+        "Agent used `tayto task rank` to reflect execution sequence",
+        "All 4 subtasks were created"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "My backlog is a mess. List all backlog tasks, figure out the dependency order, and re-rank them so the unblocked ones come first.",
+      "expected_output": "Agent lists backlog, inspects dep graphs, then uses `tayto task rank` to reorder with unblocked tasks first.",
+      "files": [],
+      "assertions": [
+        "Agent ran `tayto task list -s backlog` before reranking",
+        "Agent inspected dependency graphs before deciding order",
+        "Agent used `tayto task rank` to actually reorder tasks",
+        "Final ranking puts unblocked tasks before blocked ones"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Create a new tech-debt task for refactoring the database connection pool. Include technical notes about the current problem (connections leak under load) and requirements (must support max 20 connections, zero downtime migration).",
+      "expected_output": "Agent runs a single `tayto task create -t tech-debt` with meaningful --technical-notes and --additional-requirements flags.",
+      "files": [],
+      "assertions": [
+        "Task created with `-t tech-debt`",
+        "`--technical-notes` contains meaningful content about connection leaks",
+        "`--additional-requirements` mentions max 20 connections and zero-downtime",
+        "Used a single create command rather than create + multiple updates"
+      ]
+    }
+  ]
+}

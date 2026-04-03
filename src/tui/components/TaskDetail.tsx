@@ -7,6 +7,8 @@ interface Props {
   task: Task;
   blockers?: Task[];
   dependents?: Task[];
+  related?: Task[];
+  duplicates?: Task[];
   isFocused?: boolean;
 }
 
@@ -22,7 +24,14 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function TaskDetail({ task, blockers, dependents, isFocused = true }: Props) {
+export function TaskDetail({
+  task,
+  blockers,
+  dependents,
+  related,
+  duplicates,
+  isFocused = true,
+}: Props) {
   const allText = `${task.description}\n${task.technicalNotes}\n${task.additionalRequirements}`;
 
   return (
@@ -56,7 +65,10 @@ export function TaskDetail({ task, blockers, dependents, isFocused = true }: Pro
       </Box>
 
       {/* Dependencies summary */}
-      {((blockers && blockers.length > 0) || (dependents && dependents.length > 0)) && (
+      {((blockers && blockers.length > 0) ||
+        (dependents && dependents.length > 0) ||
+        (related && related.length > 0) ||
+        (duplicates && duplicates.length > 0)) && (
         <Box flexDirection="column" paddingX={1}>
           <Text color={theme.title} bold>
             --- dependencies ---
@@ -75,6 +87,22 @@ export function TaskDetail({ task, blockers, dependents, isFocused = true }: Pro
                 blocks:{' '}
               </Text>
               <Text color={theme.yaml.value}>{dependents.map((t) => t.id).join(', ')}</Text>
+            </Box>
+          )}
+          {related && related.length > 0 && (
+            <Box gap={0}>
+              <Text color={theme.status.new} bold>
+                relates to:{' '}
+              </Text>
+              <Text color={theme.yaml.value}>{related.map((t) => t.id).join(', ')}</Text>
+            </Box>
+          )}
+          {duplicates && duplicates.length > 0 && (
+            <Box gap={0}>
+              <Text color={theme.status.pending} bold>
+                duplicates:{' '}
+              </Text>
+              <Text color={theme.yaml.value}>{duplicates.map((t) => t.id).join(', ')}</Text>
             </Box>
           )}
           <Text dimColor>press D to manage dependencies</Text>

@@ -1,7 +1,7 @@
 import { useReducer, useEffect, useCallback, useMemo } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import type { Container } from '../../cli/container.js';
-import { TaskStatus, TaskType, isTerminalStatus } from '../../types/enums.js';
+import { TaskStatus, TaskType, DependencyType, isTerminalStatus } from '../../types/enums.js';
 import type { Task, DependencyEntry } from '../../types/task.js';
 import type { Project } from '../../types/project.js';
 import { ViewType } from '../types.js';
@@ -89,24 +89,6 @@ export function App({ container, initialProject }: Props) {
       const currentIndex = STATUS_CYCLE.indexOf(task.status);
       const nextStatus = STATUS_CYCLE[(currentIndex + 1) % STATUS_CYCLE.length];
       if (!nextStatus) return;
-
-      // Block transition to in-progress when non-terminal blockers exist
-      if (nextStatus === TaskStatus.InProgress) {
-        const blockersResult = container.dependencyService.listBlockers(task.id);
-        if (blockersResult.ok) {
-          const hasNonTerminalBlocker = blockersResult.value.some(
-            (b) => !isTerminalStatus(b.status),
-          );
-          if (hasNonTerminalBlocker) {
-            dispatch({
-              type: 'FLASH',
-              message: 'Task is blocked by unfinished dependencies',
-              level: 'error',
-            });
-            return;
-          }
-        }
-      }
 
       const result = container.taskService.updateTask(task.id, { status: nextStatus });
       if (result.ok) {
@@ -389,6 +371,7 @@ export function App({ container, initialProject }: Props) {
         const task = state.tasks[state.selectedIndex];
         if (task) {
           dispatch({ type: 'SELECT_TASK', task });
+          loadDeps(task.id);
           dispatch({ type: 'NAVIGATE_TO', view: ViewType.TaskEdit });
         }
         return;
@@ -539,35 +522,12 @@ export function App({ container, initialProject }: Props) {
         ];
         const selected = allItems[state.depSelectedIndex];
         if (selected) {
-          const idx = state.depSelectedIndex;
-          const blockersEnd = state.depBlockers.length;
-          const dependentsEnd = blockersEnd + state.depDependents.length;
-          // Blockers: selectedTask depends on selected (task_id=selectedTask, depends_on_id=selected)
-          // Dependents: selected depends on selectedTask (task_id=selected, depends_on_id=selectedTask)
-          // Related/Duplicates: stored in either direction — try both
-          const result = idx < blockersEnd
-            ? container.dependencyService.removeDependency({
-                taskId: state.selectedTask.id,
-                dependsOnId: selected.id,
-              })
-            : idx < dependentsEnd
-            ? container.dependencyService.removeDependency({
-                taskId: selected.id,
-                dependsOnId: state.selectedTask.id,
-              })
-            : (() => {
-                const r = container.dependencyService.removeDependency({
-                  taskId: state.selectedTask.id,
-                  dependsOnId: selected.id,
-                });
-                if (!r.ok) {
-                  return container.dependencyService.removeDependency({
-                    taskId: selected.id,
-                    dependsOnId: state.selectedTask.id,
-                  });
-                }
-                return r;
-              })();
+          // removeDependencyBetween handles direction-agnostic removal for
+          // all relationship types (blockers, dependents, related, duplicates).
+          const result = container.dependencyService.removeDependencyBetween(
+            state.selectedTask.id,
+            selected.id,
+          );
           if (result.ok) {
             dispatch({ type: 'FLASH', message: 'Dependency removed', level: 'info' });
             loadDeps(state.selectedTask.id);
@@ -606,15 +566,50 @@ export function App({ container, initialProject }: Props) {
       dependsOn?: DependencyEntry[];
     }) => {
       if (state.activeView === ViewType.TaskEdit && state.selectedTask) {
-        const result = container.taskService.updateTask(state.selectedTask.id, data);
-        if (result.ok) {
-          dispatch({ type: 'FLASH', message: 'Task updated', level: 'info' });
-          dispatch({ type: 'SELECT_TASK', task: result.value });
-          dispatch({ type: 'GO_BACK' });
-          loadTasks();
-        } else {
+        const taskId = state.selectedTask.id;
+        const result = container.taskService.updateTask(taskId, data);
+        if (!result.ok) {
           dispatch({ type: 'FLASH', message: result.error.message, level: 'error' });
+          return;
         }
+
+        // Diff and apply dependency changes.
+        // Current outgoing deps (what this task depends on, in stored direction).
+        const currentDepsResult = container.dependencyService.listAllDeps(taskId);
+        const currentDeps = currentDepsResult.ok ? currentDepsResult.value : [];
+
+        // New desired outgoing deps from the form.
+        const newDeps = data.dependsOn ?? [];
+
+        // Build lookup keys: "dependsOnId:type" for outgoing edges.
+        const currentKeys = new Set(currentDeps.map((d) => `${d.dependsOnId}:${d.type}`));
+        const newKeys = new Set(newDeps.map((d) => `${d.id}:${d.type}`));
+
+        // Remove edges that are no longer in new deps.
+        for (const dep of currentDeps) {
+          if (!newKeys.has(`${dep.dependsOnId}:${dep.type}`)) {
+            container.dependencyService.removeDependency({
+              taskId,
+              dependsOnId: dep.dependsOnId,
+            });
+          }
+        }
+
+        // Add edges that are new (service handles blocked-by normalization).
+        for (const entry of newDeps) {
+          if (currentKeys.has(`${entry.id}:${entry.type}`)) continue;
+          container.dependencyService.addDependency({
+            taskId,
+            dependsOnId: entry.id,
+            type: entry.type,
+          });
+        }
+
+        dispatch({ type: 'FLASH', message: 'Task updated', level: 'info' });
+        dispatch({ type: 'SELECT_TASK', task: result.value });
+        loadDeps(taskId);
+        dispatch({ type: 'GO_BACK' });
+        loadTasks();
       } else {
         const result = container.taskService.createTask(data, state.activeProject?.id);
         if (result.ok) {
@@ -626,7 +621,7 @@ export function App({ container, initialProject }: Props) {
         }
       }
     },
-    [container, state.activeView, state.selectedTask, state.activeProject, loadTasks],
+    [container, state.activeView, state.selectedTask, state.activeProject, loadTasks, loadDeps],
   );
 
   const handleFormCancel = useCallback(() => {
@@ -638,6 +633,21 @@ export function App({ container, initialProject }: Props) {
     dispatch({ type: 'GO_BACK' });
     dispatch({ type: 'FLASH', message: `Switched to: ${project.name}`, level: 'info' });
   }, []);
+
+  const handleSetDefault = useCallback(
+    (project: Project) => {
+      const result = container.projectService.updateProject(project.id, { isDefault: true });
+      if (result.ok) {
+        logger.info(`TUI.setDefault: set key=${result.value.key} as default`);
+        dispatch({ type: 'FLASH', message: `Default project: ${result.value.name}`, level: 'info' });
+        loadProjects();
+      } else {
+        logger.error('TUI.setDefault: failed', result.error);
+        dispatch({ type: 'FLASH', message: result.error.message, level: 'error' });
+      }
+    },
+    [container, loadProjects],
+  );
 
   const handleProjectCreate = useCallback(() => {
     dispatch({ type: 'NAVIGATE_TO', view: ViewType.ProjectCreate });
@@ -681,12 +691,29 @@ export function App({ container, initialProject }: Props) {
 
   const previewTask = state.tasks[state.selectedIndex] ?? null;
 
-  // All project tasks (unfiltered) for the dependency picker
+  // Derive initial deps for the edit form from the already-loaded dep state.
+  // depBlockers = tasks the selected task depends on (outgoing blocks edges).
+  // depRelated / depDuplicates = bidirectional, but we seed them as outgoing.
+  const initialDepsForEdit = useMemo((): import('./TaskPicker.js').PickedDependency[] => {
+    return [
+      ...state.depBlockers.map((t) => ({ id: t.id, name: t.name, type: DependencyType.Blocks })),
+      ...state.depRelated.map((t) => ({ id: t.id, name: t.name, type: DependencyType.RelatesTo })),
+      ...state.depDuplicates.map((t) => ({
+        id: t.id,
+        name: t.name,
+        type: DependencyType.Duplicates,
+      })),
+    ];
+  }, [state.depBlockers, state.depRelated, state.depDuplicates]);
+
+  // All project tasks (unfiltered) for the dependency picker.
+  // Depends on state.tasks so it re-fetches whenever loadTasks() updates the list
+  // (e.g. after a task is created), ensuring newly created tasks appear in the picker.
   const allProjectTasks = useMemo(() => {
     if (!state.activeProject) return [];
     const result = container.taskService.listTasks({ projectId: state.activeProject.id });
     return result.ok ? result.value : [];
-  }, [container, state.activeProject]);
+  }, [container, state.activeProject, state.tasks]);
   const previewTaskId = previewTask?.id ?? null;
 
   // Load deps for the preview pane when selection changes (track ID, not object reference)
@@ -723,9 +750,7 @@ export function App({ container, initialProject }: Props) {
                 }
                 nonTerminalDependentIds={
                   new Set(
-                    state.depDependents
-                      .filter((t) => !isTerminalStatus(t.status))
-                      .map((t) => t.id),
+                    state.depDependents.filter((t) => !isTerminalStatus(t.status)).map((t) => t.id),
                   )
                 }
                 isSelectedBlocked={state.depBlockers.some((t) => !isTerminalStatus(t.status))}
@@ -738,6 +763,8 @@ export function App({ container, initialProject }: Props) {
                   task={previewTask}
                   blockers={state.depBlockers}
                   dependents={state.depDependents}
+                  related={state.depRelated}
+                  duplicates={state.depDuplicates}
                   isFocused={state.focusedPanel === 'detail'}
                 />
               ) : (
@@ -767,6 +794,8 @@ export function App({ container, initialProject }: Props) {
             task={state.selectedTask}
             blockers={state.depBlockers}
             dependents={state.depDependents}
+            related={state.depRelated}
+            duplicates={state.depDuplicates}
           />
         )}
 
@@ -790,6 +819,7 @@ export function App({ container, initialProject }: Props) {
             <TaskForm
               editingTask={state.activeView === ViewType.TaskEdit ? state.selectedTask : null}
               allTasks={allProjectTasks}
+              initialDeps={state.activeView === ViewType.TaskEdit ? initialDepsForEdit : undefined}
               onSave={handleFormSave}
               onCancel={handleFormCancel}
             />
@@ -801,6 +831,7 @@ export function App({ container, initialProject }: Props) {
             activeProject={state.activeProject}
             onSelect={handleProjectSelect}
             onCreate={handleProjectCreate}
+            onSetDefault={handleSetDefault}
             onCancel={handleProjectCancel}
           />
         )}

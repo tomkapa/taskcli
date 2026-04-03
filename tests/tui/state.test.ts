@@ -24,8 +24,8 @@ describe('appReducer', () => {
     expect(initialState.breadcrumbs).toEqual([ViewType.TaskList]);
   });
 
-  it('defaults filter to backlog status', () => {
-    expect(initialState.filter.status).toBe('backlog');
+  it('defaults filter to empty (no filter)', () => {
+    expect(initialState.filter).toEqual({});
   });
 
   it('NAVIGATE_TO changes view and pushes breadcrumb', () => {
@@ -62,11 +62,7 @@ describe('appReducer', () => {
       type: 'NAVIGATE_TO',
       view: ViewType.TaskEdit,
     });
-    expect(state.breadcrumbs).toEqual([
-      ViewType.TaskList,
-      ViewType.TaskDetail,
-      ViewType.TaskEdit,
-    ]);
+    expect(state.breadcrumbs).toEqual([ViewType.TaskList, ViewType.TaskDetail, ViewType.TaskEdit]);
 
     const back1 = appReducer(state, { type: 'GO_BACK' });
     expect(back1.activeView).toBe(ViewType.TaskDetail);
@@ -138,13 +134,13 @@ describe('appReducer', () => {
     expect(updated.filter.search).toBe('test');
   });
 
-  it('CLEAR_FILTER resets to backlog default', () => {
+  it('CLEAR_FILTER resets to empty filter', () => {
     const withFilter = appReducer(initialState, {
       type: 'SET_FILTER',
       filter: { status: 'todo', type: 'bug', search: 'hello' },
     });
     const cleared = appReducer(withFilter, { type: 'CLEAR_FILTER' });
-    expect(cleared.filter).toEqual({ status: 'backlog' });
+    expect(cleared.filter).toEqual({});
     expect(cleared.searchQuery).toBe('');
   });
 
@@ -304,6 +300,228 @@ describe('appReducer', () => {
       });
       const moved = appReducer(state, { type: 'REORDER_MOVE', direction: 'down' });
       expect(moved.tasks[0]?.id).toBe('task-1');
+    });
+  });
+
+  describe('Dependency state', () => {
+    const mockTask2: Task = {
+      ...mockTask,
+      id: 'task-2',
+      name: 'Task 2',
+    };
+    const mockTask3: Task = {
+      ...mockTask,
+      id: 'task-3',
+      name: 'Task 3',
+    };
+    const mockTask4: Task = {
+      ...mockTask,
+      id: 'task-4',
+      name: 'Task 4',
+    };
+
+    describe('SET_DEPS', () => {
+      it('sets all dependency lists and resets cursor', () => {
+        const state = appReducer(
+          { ...initialState, depSelectedIndex: 5 },
+          {
+            type: 'SET_DEPS',
+            blockers: [mockTask],
+            dependents: [mockTask2],
+            related: [mockTask3],
+            duplicates: [mockTask4],
+          },
+        );
+        expect(state.depBlockers).toEqual([mockTask]);
+        expect(state.depDependents).toEqual([mockTask2]);
+        expect(state.depRelated).toEqual([mockTask3]);
+        expect(state.depDuplicates).toEqual([mockTask4]);
+        expect(state.depSelectedIndex).toBe(0);
+      });
+
+      it('handles empty dependency lists', () => {
+        const state = appReducer(initialState, {
+          type: 'SET_DEPS',
+          blockers: [],
+          dependents: [],
+          related: [],
+          duplicates: [],
+        });
+        expect(state.depBlockers).toHaveLength(0);
+        expect(state.depDependents).toHaveLength(0);
+        expect(state.depRelated).toHaveLength(0);
+        expect(state.depDuplicates).toHaveLength(0);
+        expect(state.depSelectedIndex).toBe(0);
+      });
+
+      it('replaces existing dependency lists', () => {
+        let state = appReducer(initialState, {
+          type: 'SET_DEPS',
+          blockers: [mockTask],
+          dependents: [mockTask2],
+          related: [],
+          duplicates: [],
+        });
+        state = appReducer(state, {
+          type: 'SET_DEPS',
+          blockers: [mockTask3],
+          dependents: [],
+          related: [mockTask4],
+          duplicates: [],
+        });
+        expect(state.depBlockers).toEqual([mockTask3]);
+        expect(state.depDependents).toHaveLength(0);
+        expect(state.depRelated).toEqual([mockTask4]);
+      });
+    });
+
+    describe('DEP_MOVE_CURSOR', () => {
+      it('moves cursor down within bounds', () => {
+        const state = appReducer(initialState, {
+          type: 'SET_DEPS',
+          blockers: [mockTask, mockTask2],
+          dependents: [mockTask3],
+          related: [],
+          duplicates: [],
+        });
+        // Total = 3 items, cursor at 0
+        const moved = appReducer(state, { type: 'DEP_MOVE_CURSOR', direction: 'down' });
+        expect(moved.depSelectedIndex).toBe(1);
+      });
+
+      it('moves cursor up within bounds', () => {
+        let state = appReducer(initialState, {
+          type: 'SET_DEPS',
+          blockers: [mockTask, mockTask2],
+          dependents: [mockTask3],
+          related: [],
+          duplicates: [],
+        });
+        state = { ...state, depSelectedIndex: 2 };
+        const moved = appReducer(state, { type: 'DEP_MOVE_CURSOR', direction: 'up' });
+        expect(moved.depSelectedIndex).toBe(1);
+      });
+
+      it('does not go below 0', () => {
+        const state = appReducer(initialState, {
+          type: 'SET_DEPS',
+          blockers: [mockTask],
+          dependents: [],
+          related: [],
+          duplicates: [],
+        });
+        const moved = appReducer(state, { type: 'DEP_MOVE_CURSOR', direction: 'up' });
+        expect(moved.depSelectedIndex).toBe(0);
+      });
+
+      it('does not exceed total item count', () => {
+        const state = appReducer(initialState, {
+          type: 'SET_DEPS',
+          blockers: [mockTask],
+          dependents: [mockTask2],
+          related: [],
+          duplicates: [],
+        });
+        // Total = 2, max index = 1
+        let moved = appReducer(state, { type: 'DEP_MOVE_CURSOR', direction: 'down' });
+        moved = appReducer(moved, { type: 'DEP_MOVE_CURSOR', direction: 'down' });
+        expect(moved.depSelectedIndex).toBe(1);
+      });
+
+      it('is no-op when all dependency lists are empty', () => {
+        const state = appReducer(initialState, {
+          type: 'SET_DEPS',
+          blockers: [],
+          dependents: [],
+          related: [],
+          duplicates: [],
+        });
+        const moved = appReducer(state, { type: 'DEP_MOVE_CURSOR', direction: 'down' });
+        expect(moved.depSelectedIndex).toBe(0);
+      });
+
+      it('counts items across all four lists for bounds', () => {
+        const state = appReducer(initialState, {
+          type: 'SET_DEPS',
+          blockers: [mockTask],
+          dependents: [mockTask2],
+          related: [mockTask3],
+          duplicates: [mockTask4],
+        });
+        // Total = 4, max index = 3
+        let moved = state;
+        moved = appReducer(moved, { type: 'DEP_MOVE_CURSOR', direction: 'down' });
+        moved = appReducer(moved, { type: 'DEP_MOVE_CURSOR', direction: 'down' });
+        moved = appReducer(moved, { type: 'DEP_MOVE_CURSOR', direction: 'down' });
+        expect(moved.depSelectedIndex).toBe(3);
+        // Cannot go further
+        moved = appReducer(moved, { type: 'DEP_MOVE_CURSOR', direction: 'down' });
+        expect(moved.depSelectedIndex).toBe(3);
+      });
+    });
+
+    describe('SET_ADDING_DEP', () => {
+      it('enables adding dep mode and clears input', () => {
+        const state = appReducer(
+          { ...initialState, addDepInput: 'leftover' },
+          { type: 'SET_ADDING_DEP', active: true },
+        );
+        expect(state.isAddingDep).toBe(true);
+        expect(state.addDepInput).toBe('');
+      });
+
+      it('disables adding dep mode and clears input', () => {
+        let state = appReducer(initialState, { type: 'SET_ADDING_DEP', active: true });
+        state = appReducer(state, { type: 'SET_ADD_DEP_INPUT', input: 'TASK-123' });
+        state = appReducer(state, { type: 'SET_ADDING_DEP', active: false });
+        expect(state.isAddingDep).toBe(false);
+        expect(state.addDepInput).toBe('');
+      });
+    });
+
+    describe('SET_ADD_DEP_INPUT', () => {
+      it('updates the dependency input text', () => {
+        const state = appReducer(initialState, {
+          type: 'SET_ADD_DEP_INPUT',
+          input: 'TASK-456',
+        });
+        expect(state.addDepInput).toBe('TASK-456');
+      });
+
+      it('handles input with type suffix', () => {
+        const state = appReducer(initialState, {
+          type: 'SET_ADD_DEP_INPUT',
+          input: 'TASK-789:relates-to',
+        });
+        expect(state.addDepInput).toBe('TASK-789:relates-to');
+      });
+
+      it('handles empty input', () => {
+        const state = appReducer(
+          { ...initialState, addDepInput: 'previous' },
+          { type: 'SET_ADD_DEP_INPUT', input: '' },
+        );
+        expect(state.addDepInput).toBe('');
+      });
+    });
+
+    describe('navigation clears dependency state', () => {
+      it('NAVIGATE_TO DependencyList preserves dep state', () => {
+        let state = appReducer(initialState, {
+          type: 'SET_DEPS',
+          blockers: [mockTask],
+          dependents: [],
+          related: [],
+          duplicates: [],
+        });
+        state = appReducer(state, {
+          type: 'NAVIGATE_TO',
+          view: ViewType.DependencyList,
+        });
+        // Dep state is preserved across navigation
+        expect(state.depBlockers).toEqual([mockTask]);
+        expect(state.activeView).toBe(ViewType.DependencyList);
+      });
     });
   });
 });

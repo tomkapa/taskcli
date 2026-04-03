@@ -9,7 +9,7 @@ export const initialState: AppState = {
   selectedTask: null,
   projects: [],
   activeProject: null,
-  filter: { status: 'backlog' },
+  filter: {},
   searchQuery: '',
   isSearchActive: false,
   isReordering: false,
@@ -73,7 +73,7 @@ export function appReducer(state: AppState, action: Action): AppState {
       };
 
     case 'CLEAR_FILTER':
-      return { ...state, filter: { status: 'backlog' }, selectedIndex: 0, searchQuery: '' };
+      return { ...state, filter: {}, selectedIndex: 0, searchQuery: '' };
 
     case 'SET_SEARCH_ACTIVE':
       return { ...state, isSearchActive: action.active };
