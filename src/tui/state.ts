@@ -1,5 +1,6 @@
 import { ViewType } from './types.js';
 import type { AppState, Action } from './types.js';
+import { PAGE_SIZE } from './constants.js';
 
 export const initialState: AppState = {
   activeView: ViewType.TaskList,
@@ -108,6 +109,15 @@ export function appReducer(state: AppState, action: Action): AppState {
         action.direction === 'up'
           ? Math.max(0, state.selectedIndex - 1)
           : Math.min(maxIndex, state.selectedIndex + 1);
+      return { ...state, selectedIndex: newIndex, detailScrollOffset: 0 };
+    }
+
+    case 'PAGE_CURSOR': {
+      const maxIndex = Math.max(0, state.tasks.length - 1);
+      const newIndex =
+        action.direction === 'up'
+          ? Math.max(0, state.selectedIndex - PAGE_SIZE)
+          : Math.min(maxIndex, state.selectedIndex + PAGE_SIZE);
       return { ...state, selectedIndex: newIndex, detailScrollOffset: 0 };
     }
 

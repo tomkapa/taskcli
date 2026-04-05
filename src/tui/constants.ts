@@ -4,6 +4,9 @@ import { theme } from './theme.js';
 export const STATUS_VALUES = Object.values(TaskStatus);
 export const TYPE_VALUES = Object.values(TaskType);
 
+/** Number of task rows visible per page in the task list. */
+export const PAGE_SIZE = 20;
+
 export const STATUS_COLOR: Record<string, string> = {
   [TaskStatus.Backlog]: theme.status.completed,
   [TaskStatus.Todo]: theme.status.new,

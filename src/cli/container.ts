@@ -12,13 +12,14 @@ import type { DependencyService } from '../service/dependency.service.js';
 import type { PortabilityService } from '../service/portability.service.js';
 
 export interface Container {
+  dbPath: string;
   projectService: ProjectService;
   taskService: TaskService;
   dependencyService: DependencyService;
   portabilityService: PortabilityService;
 }
 
-export function createContainer(db: DatabaseSync): Container {
+export function createContainer(db: DatabaseSync, dbPath: string): Container {
   const projectRepo = new SqliteProjectRepository(db);
   const taskRepo = new SqliteTaskRepository(db);
   const depRepo = new SqliteDependencyRepository(db);
@@ -31,5 +32,5 @@ export function createContainer(db: DatabaseSync): Container {
     projectService,
   );
 
-  return { projectService, taskService, dependencyService, portabilityService };
+  return { dbPath, projectService, taskService, dependencyService, portabilityService };
 }

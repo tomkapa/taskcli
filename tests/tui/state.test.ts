@@ -110,6 +110,62 @@ describe('appReducer', () => {
     expect(upFromZero.selectedIndex).toBe(0);
   });
 
+  describe('PAGE_CURSOR', () => {
+    // Build a list of 25 tasks for paging tests (PAGE_SIZE = 20)
+    const manyTasks = Array.from({ length: 25 }, (_, i) => ({
+      ...mockTask,
+      id: `task-${i + 1}`,
+      name: `Task ${i + 1}`,
+      rank: (i + 1) * 1000,
+    }));
+
+    it('page down moves cursor by PAGE_SIZE', () => {
+      let state = appReducer(initialState, { type: 'SET_TASKS', tasks: manyTasks });
+      state = appReducer(state, { type: 'PAGE_CURSOR', direction: 'down' });
+      expect(state.selectedIndex).toBe(20);
+    });
+
+    it('page down clamps to last item', () => {
+      let state = appReducer(initialState, { type: 'SET_TASKS', tasks: manyTasks });
+      // Move near end, then page down
+      state = { ...state, selectedIndex: 22 };
+      state = appReducer(state, { type: 'PAGE_CURSOR', direction: 'down' });
+      expect(state.selectedIndex).toBe(24); // last index
+    });
+
+    it('page up moves cursor by PAGE_SIZE', () => {
+      let state = appReducer(initialState, { type: 'SET_TASKS', tasks: manyTasks });
+      state = { ...state, selectedIndex: 22 };
+      state = appReducer(state, { type: 'PAGE_CURSOR', direction: 'up' });
+      expect(state.selectedIndex).toBe(2);
+    });
+
+    it('page up clamps to 0', () => {
+      let state = appReducer(initialState, { type: 'SET_TASKS', tasks: manyTasks });
+      state = { ...state, selectedIndex: 5 };
+      state = appReducer(state, { type: 'PAGE_CURSOR', direction: 'up' });
+      expect(state.selectedIndex).toBe(0);
+    });
+
+    it('page down is no-op on empty list', () => {
+      const state = appReducer(initialState, { type: 'PAGE_CURSOR', direction: 'down' });
+      expect(state.selectedIndex).toBe(0);
+    });
+
+    it('page up from 0 stays at 0', () => {
+      let state = appReducer(initialState, { type: 'SET_TASKS', tasks: manyTasks });
+      state = appReducer(state, { type: 'PAGE_CURSOR', direction: 'up' });
+      expect(state.selectedIndex).toBe(0);
+    });
+
+    it('resets detailScrollOffset', () => {
+      let state = appReducer(initialState, { type: 'SET_TASKS', tasks: manyTasks });
+      state = { ...state, detailScrollOffset: 10 };
+      state = appReducer(state, { type: 'PAGE_CURSOR', direction: 'down' });
+      expect(state.detailScrollOffset).toBe(0);
+    });
+  });
+
   it('SET_FILTER merges filter and resets cursor', () => {
     const withIndex = { ...initialState, selectedIndex: 3 };
     const state = appReducer(withIndex, {

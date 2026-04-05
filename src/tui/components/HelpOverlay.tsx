@@ -7,6 +7,8 @@ const SECTIONS = [
     keys: [
       ['j/k', 'Up/Down'],
       ['g/G', 'Top/Bottom'],
+      ['PgDn', 'Page down'],
+      ['PgUp', 'Page up'],
       ['enter', 'View'],
       ['esc', 'Back'],
     ],

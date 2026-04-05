@@ -39,6 +39,7 @@ function getKeyHints(view: string, isSearchActive: boolean, focusedPanel: string
       { key: 'p', desc: 'project' },
       { key: 'f', desc: 'status-f' },
       { key: 't', desc: 'type-f' },
+      { key: 'PgDn/Up', desc: 'page' },
       { key: 'tab', desc: 'panel' },
       { key: '?', desc: 'help' },
       { key: 'q', desc: 'quit' },

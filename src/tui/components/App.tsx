@@ -1,5 +1,5 @@
 import { useReducer, useEffect, useCallback, useMemo } from 'react';
-import { Box, Text, useInput, useApp } from 'ink';
+import { Box, Text, useInput, useApp, useStdout } from 'ink';
 import type { Container } from '../../cli/container.js';
 import {
   TaskStatus,
@@ -29,6 +29,7 @@ import { EpicPicker } from './EpicPicker.js';
 import { openAllMermaidDiagrams } from './Markdown.js';
 import { theme } from '../theme.js';
 import { logger } from '../../logging/logger.js';
+import { useAutoRefetch } from '../useAutoRefetch.js';
 
 interface Props {
   container: Container;
@@ -43,9 +44,19 @@ const STATUS_CYCLE: TaskStatus[] = [
   TaskStatus.Done,
 ];
 
+const EPIC_PANEL_WIDTH = 48;
+
 export function App({ container, initialProject }: Props) {
   const { exit } = useApp();
+  const { stdout } = useStdout();
   const [state, dispatch] = useReducer(appReducer, initialState);
+
+  // Fixed panel widths so they don't jump when content changes
+  const termWidth = stdout.columns > 0 ? stdout.columns : 120;
+  // EpicPanel border adds 2 chars; remaining space split 60/40 between list/detail
+  const remaining = Math.max(0, termWidth - EPIC_PANEL_WIDTH - 2);
+  const taskListWidth = Math.floor(remaining * 0.6);
+  const taskDetailWidth = remaining - taskListWidth;
 
   const loadProjects = useCallback(() => {
     const result = container.projectService.listProjects();
@@ -178,6 +189,16 @@ export function App({ container, initialProject }: Props) {
     });
     loadEpics();
   }, [container, state.epics, state.epicSelectedIndex, loadEpics]);
+
+  // Watch the SQLite file for external changes (e.g. CLI mutations) and
+  // refetch all data so the TUI stays in sync.
+  const refetchAll = useCallback(() => {
+    loadProjects();
+    loadTasks();
+    loadEpics();
+  }, [loadProjects, loadTasks, loadEpics]);
+
+  useAutoRefetch(container.dbPath, refetchAll);
 
   // Initial load
   useEffect(() => {
@@ -467,6 +488,14 @@ export function App({ container, initialProject }: Props) {
       }
       if (input === 'G') {
         dispatch({ type: 'SET_CURSOR', index: state.tasks.length - 1 });
+        return;
+      }
+      if (key.pageDown || (key.ctrl && input === 'd')) {
+        dispatch({ type: 'PAGE_CURSOR', direction: 'down' });
+        return;
+      }
+      if (key.pageUp || (key.ctrl && input === 'u')) {
+        dispatch({ type: 'PAGE_CURSOR', direction: 'up' });
         return;
       }
       if (key.return) {
@@ -949,7 +978,7 @@ export function App({ container, initialProject }: Props) {
               isFocused={state.focusedPanel === 'epic'}
               isReordering={state.isEpicReordering}
             />
-            <Box flexGrow={2}>
+            <Box width={taskListWidth}>
               <TaskList
                 tasks={state.tasks}
                 selectedIndex={state.selectedIndex}
@@ -973,7 +1002,7 @@ export function App({ container, initialProject }: Props) {
                 epicFilterActive={state.selectedEpicIds.size > 0}
               />
             </Box>
-            <Box flexGrow={1}>
+            <Box width={taskDetailWidth}>
               {previewTask ? (
                 <TaskDetail
                   task={previewTask}

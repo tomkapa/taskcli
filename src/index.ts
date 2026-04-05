@@ -15,7 +15,7 @@ async function main(): Promise<void> {
   const db = createDatabase(config.dbPath);
   runMigrations(db);
 
-  const container = createContainer(db);
+  const container = createContainer(db, config.dbPath);
 
   const args = process.argv.slice(2);
   if (args.length === 0) {

@@ -1,4 +1,4 @@
-import { Box, Text, useStdout } from 'ink';
+import { Box, Text } from 'ink';
 import type { Task } from '../../types/task.js';
 import { theme } from '../theme.js';
 import { Markdown, MermaidHint } from './Markdown.js';
@@ -34,11 +34,7 @@ export function TaskDetail({
   isFocused = true,
   scrollOffset = 0,
 }: Props) {
-  const { stdout } = useStdout();
   const allText = `${task.description}\n${task.technicalNotes}\n${task.additionalRequirements}`;
-
-  // Reserve 4 lines for title bar + footer + border
-  const viewportHeight = Math.max(5, (stdout.rows > 0 ? stdout.rows : 24) - 4);
 
   return (
     <Box
@@ -62,7 +58,7 @@ export function TaskDetail({
       </Box>
 
       {/* Scrollable content area */}
-      <Box flexDirection="column" height={viewportHeight} overflowY="hidden">
+      <Box flexDirection="column" flexGrow={1} overflowY="hidden">
         <Box flexDirection="column" marginTop={-scrollOffset}>
           {/* Metadata in YAML style */}
           <Box flexDirection="column" paddingX={1} paddingY={0}>
@@ -152,8 +148,6 @@ export function TaskDetail({
           )}
         </Box>
       </Box>
-
-      <Box flexGrow={1} />
 
       {/* Mermaid diagram hint */}
       <Box paddingX={1}>

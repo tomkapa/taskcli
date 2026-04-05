@@ -3,8 +3,7 @@ import type { Task } from '../../types/task.js';
 import { theme } from '../theme.js';
 import { STATUS_COLOR, TYPE_COLOR } from '../constants.js';
 import type { TaskFilter } from '../../types/task.js';
-
-const PAGE_SIZE = 20;
+import { PAGE_SIZE } from '../constants.js';
 
 interface Props {
   tasks: Task[];

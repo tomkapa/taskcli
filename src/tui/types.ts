@@ -81,6 +81,7 @@ export type Action =
   | { type: 'CONFIRM_DELETE'; task: Task }
   | { type: 'CANCEL_DELETE' }
   | { type: 'MOVE_CURSOR'; direction: 'up' | 'down' }
+  | { type: 'PAGE_CURSOR'; direction: 'up' | 'down' }
   | { type: 'SET_CURSOR'; index: number }
   | { type: 'SELECT_TASK'; task: Task }
   | { type: 'SET_FORM_DATA'; data: Partial<FormData> | null }
