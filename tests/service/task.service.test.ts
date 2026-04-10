@@ -143,6 +143,20 @@ describe('TaskService', () => {
     expect(result.value.every((t) => t.type === 'bug')).toBe(true);
   });
 
+  it('listTasks scopes to default project when no project specified', () => {
+    const p2 = container.projectService.createProject({ name: 'Other' });
+    if (!p2.ok) throw new Error('setup failed');
+
+    container.taskService.createTask({ name: 'Default task' });
+    container.taskService.createTask({ name: 'Other task' }, 'Other');
+
+    const result = container.taskService.listTasks({ status: 'backlog' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toHaveLength(1);
+    expect(result.value[0]?.name).toBe('Default task');
+  });
+
   it('searches tasks by text', () => {
     container.taskService.createTask({ name: 'Fix login bug' });
     container.taskService.createTask({ name: 'Add dashboard' });

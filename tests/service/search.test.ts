@@ -101,6 +101,20 @@ describe('FTS5 Search', () => {
     expect(result.value[0]!.task.name).toBe('Login fix in other');
   });
 
+  it('scopes search to default project when no project specified', () => {
+    const p2 = container.projectService.createProject({ name: 'Other' });
+    if (!p2.ok) throw new Error('setup failed');
+
+    container.taskService.createTask({ name: 'Login fix in default' });
+    container.taskService.createTask({ name: 'Login fix in other' }, 'Other');
+
+    const result = container.taskService.searchTasks('login');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toHaveLength(1);
+    expect(result.value[0]!.task.name).toBe('Login fix in default');
+  });
+
   it('returns empty for no matches', () => {
     container.taskService.createTask({ name: 'Some task' });
 

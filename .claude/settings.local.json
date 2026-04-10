@@ -10,7 +10,8 @@
       "Bash(npx tsc:*)",
       "Bash(npx tsx:*)",
       "Bash(grep -E \"\\\\.\\(sql|ts\\)$\")",
-      "Bash(tayto task:*)"
+      "Bash(tayto task:*)",
+      "Bash(npm test:*)"
     ]
   }
 }

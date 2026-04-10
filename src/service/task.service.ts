@@ -112,13 +112,13 @@ export class TaskServiceImpl implements TaskService {
         return err(new AppError('VALIDATION', parsed.error.message));
       }
 
-      let resolvedFilter: TaskFilter = parsed.data;
+      const projectResult = this.projectService.resolveProject(parsed.data.projectId);
+      if (!projectResult.ok) return projectResult;
 
-      if (parsed.data.projectId) {
-        const projectResult = this.projectService.resolveProject(parsed.data.projectId);
-        if (!projectResult.ok) return projectResult;
-        resolvedFilter = { ...resolvedFilter, projectId: projectResult.value.id };
-      }
+      const resolvedFilter: TaskFilter = {
+        ...parsed.data,
+        projectId: projectResult.value.id,
+      };
 
       return this.repo.findMany(resolvedFilter);
     });
@@ -462,14 +462,10 @@ export class TaskServiceImpl implements TaskService {
         return err(new AppError('VALIDATION', 'Search query cannot be empty'));
       }
 
-      let projectId: string | undefined;
-      if (projectIdOrName) {
-        const projectResult = this.projectService.resolveProject(projectIdOrName);
-        if (!projectResult.ok) return projectResult;
-        projectId = projectResult.value.id;
-      }
+      const projectResult = this.projectService.resolveProject(projectIdOrName);
+      if (!projectResult.ok) return projectResult;
 
-      return this.repo.search(query, projectId);
+      return this.repo.search(query, projectResult.value.id);
     });
   }
 
