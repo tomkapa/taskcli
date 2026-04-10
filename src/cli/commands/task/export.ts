@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import type { Container } from '../../container.js';
 import { printSuccess, printError } from '../../output.js';
 import { AppError } from '../../../errors/app-error.js';
+import { withProject } from '../../helpers/project.js';
 
 export function registerTaskExport(parent: Command, container: Container): void {
   parent
@@ -11,7 +12,9 @@ export function registerTaskExport(parent: Command, container: Container): void 
     .option('-p, --project <project>', 'Project id or name')
     .option('-o, --output <file>', 'Output file path (defaults to stdout)')
     .action((opts: { project?: string; output?: string }) => {
-      const result = container.portabilityService.exportTasks(opts.project);
+      const projectResult = withProject(container, opts.project);
+      if (!projectResult.ok) return printError(projectResult.error);
+      const result = container.portabilityService.exportTasks(projectResult.value);
       if (!result.ok) {
         return printError(result.error);
       }

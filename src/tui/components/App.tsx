@@ -84,16 +84,15 @@ export function App({ container, initialProject }: Props) {
   }, [container]);
 
   const loadTasks = useCallback(() => {
+    const activeProject = state.activeProject;
+    if (!activeProject) return;
     logger.startSpan('TUI.loadTasks', () => {
       const filter = { ...state.filter, level: TaskLevel.Work };
-      if (state.activeProject) {
-        filter.projectId = state.activeProject.id;
-      }
       // Apply epic filter: when epics are selected, show only their children
       if (state.selectedEpicIds.size > 0) {
         filter.parentIds = [...state.selectedEpicIds];
       }
-      const result = container.taskService.listTasks(filter);
+      const result = container.taskService.listTasks(activeProject, filter);
       if (result.ok) {
         logger.info(`TUI.loadTasks: loaded ${result.value.length} tasks`);
         dispatch({ type: 'SET_TASKS', tasks: result.value });
@@ -106,8 +105,7 @@ export function App({ container, initialProject }: Props) {
 
   const loadEpics = useCallback(() => {
     if (!state.activeProject) return;
-    const result = container.taskService.listTasks({
-      projectId: state.activeProject.id,
+    const result = container.taskService.listTasks(state.activeProject, {
       level: TaskLevel.Epic,
     });
     if (result.ok) {
@@ -156,6 +154,8 @@ export function App({ container, initialProject }: Props) {
   );
 
   const saveReorder = useCallback(() => {
+    const activeProject = state.activeProject;
+    if (!activeProject) return;
     const tasks = state.tasks;
     const idx = state.selectedIndex;
     const task = tasks[idx];
@@ -166,10 +166,10 @@ export function App({ container, initialProject }: Props) {
 
     // Use after/before positioning so the service computes the rank
     const result = prev
-      ? container.taskService.rerankTask({ taskId: task.id, afterId: prev.id })
+      ? container.taskService.rerankTask({ taskId: task.id, afterId: prev.id }, activeProject)
       : next
-        ? container.taskService.rerankTask({ taskId: task.id, beforeId: next.id })
-        : container.taskService.rerankTask({ taskId: task.id, position: 1 });
+        ? container.taskService.rerankTask({ taskId: task.id, beforeId: next.id }, activeProject)
+        : container.taskService.rerankTask({ taskId: task.id, position: 1 }, activeProject);
 
     dispatch({ type: 'EXIT_REORDER', save: result.ok });
     dispatch({
@@ -181,6 +181,8 @@ export function App({ container, initialProject }: Props) {
   }, [container, state.tasks, state.selectedIndex, loadTasks]);
 
   const saveEpicReorder = useCallback(() => {
+    const activeProject = state.activeProject;
+    if (!activeProject) return;
     const epics = state.epics;
     const idx = state.epicSelectedIndex;
     const epic = epics[idx];
@@ -190,10 +192,10 @@ export function App({ container, initialProject }: Props) {
     const next = epics[idx + 1];
 
     const result = prev
-      ? container.taskService.rerankTask({ taskId: epic.id, afterId: prev.id })
+      ? container.taskService.rerankTask({ taskId: epic.id, afterId: prev.id }, activeProject)
       : next
-        ? container.taskService.rerankTask({ taskId: epic.id, beforeId: next.id })
-        : container.taskService.rerankTask({ taskId: epic.id, position: 1 });
+        ? container.taskService.rerankTask({ taskId: epic.id, beforeId: next.id }, activeProject)
+        : container.taskService.rerankTask({ taskId: epic.id, position: 1 }, activeProject);
 
     dispatch({ type: 'EXIT_EPIC_REORDER', save: result.ok });
     dispatch({
@@ -206,14 +208,19 @@ export function App({ container, initialProject }: Props) {
 
   const rerankSelectedToEdge = useCallback(
     (kind: 'task' | 'epic', edge: 'top' | 'bottom') => {
+      const activeProject = state.activeProject;
+      if (!activeProject) return;
       const isEpic = kind === 'epic';
       const item = isEpic ? state.epics[state.epicSelectedIndex] : state.tasks[state.selectedIndex];
       if (!item) return;
 
-      const result = container.taskService.rerankTask({
-        taskId: item.id,
-        ...(edge === 'top' ? { top: true } : { bottom: true }),
-      });
+      const result = container.taskService.rerankTask(
+        {
+          taskId: item.id,
+          ...(edge === 'top' ? { top: true } : { bottom: true }),
+        },
+        activeProject,
+      );
 
       dispatch({
         type: isEpic ? 'EXIT_EPIC_REORDER' : 'EXIT_REORDER',
@@ -257,7 +264,7 @@ export function App({ container, initialProject }: Props) {
   useEffect(() => {
     if (state.projects.length > 0 && !state.activeProject) {
       logger.info(`TUI.resolveProject: resolving initialProject=${initialProject ?? '(default)'}`);
-      const result = container.projectService.resolveProjectWithGit(initialProject);
+      const result = container.projectService.resolveProject(initialProject);
       if (result.ok) {
         logger.info(
           `TUI.resolveProject: resolved to key=${result.value.key} name=${result.value.name}`,
@@ -881,7 +888,8 @@ export function App({ container, initialProject }: Props) {
         loadTasks();
         loadEpics();
       } else {
-        const result = container.taskService.createTask(data, state.activeProject?.id);
+        if (!state.activeProject) return;
+        const result = container.taskService.createTask(data, state.activeProject);
         if (result.ok) {
           dispatch({ type: 'FLASH', message: 'Task created', level: 'info' });
           dispatch({ type: 'GO_BACK' });
@@ -1073,7 +1081,7 @@ export function App({ container, initialProject }: Props) {
   // (e.g. after a task is created), ensuring newly created tasks appear in the picker.
   const allProjectTasks = useMemo(() => {
     if (!state.activeProject) return [];
-    const result = container.taskService.listTasks({ projectId: state.activeProject.id });
+    const result = container.taskService.listTasks(state.activeProject, {});
     return result.ok ? result.value : [];
   }, [container, state.activeProject, state.tasks]);
   const previewTaskId = previewTask?.id ?? null;

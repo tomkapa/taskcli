@@ -38,7 +38,6 @@ export const UpdateTaskSchema = z.object({
 export type UpdateTaskInput = z.infer<typeof UpdateTaskSchema>;
 
 export const TaskFilterSchema = z.object({
-  projectId: z.string().optional(),
   status: z.enum(taskStatusValues).optional(),
   type: z.enum(taskTypeValues).optional(),
   level: z.number().int().min(1).max(2).optional(),
@@ -47,7 +46,7 @@ export const TaskFilterSchema = z.object({
   parentIds: z.array(z.string()).optional(),
   search: z.string().optional(),
 });
-export type TaskFilter = z.infer<typeof TaskFilterSchema>;
+export type TaskFilter = z.infer<typeof TaskFilterSchema> & { projectId?: string };
 
 export const RerankTaskSchema = z.object({
   taskId: z.string().min(1, 'Task id is required'),

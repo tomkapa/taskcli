@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import type { Container } from '../../container.js';
-import { handleResult } from '../../output.js';
+import { handleResult, printError } from '../../output.js';
+import { withProject } from '../../helpers/project.js';
 
 export function registerTaskList(parent: Command, container: Container): void {
   parent
@@ -21,8 +22,9 @@ export function registerTaskList(parent: Command, container: Container): void {
         parent?: string;
         search?: string;
       }) => {
-        const result = container.taskService.listTasks({
-          projectId: opts.project,
+        const projectResult = withProject(container, opts.project);
+        if (!projectResult.ok) return printError(projectResult.error);
+        const result = container.taskService.listTasks(projectResult.value, {
           status: opts.status ?? 'backlog',
           type: opts.type,
           level: opts.level ? parseInt(opts.level, 10) : undefined,

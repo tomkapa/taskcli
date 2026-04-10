@@ -9,6 +9,7 @@ import {
 } from '../types/task.js';
 import type { TaskRepository, SearchResult } from '../repository/task.repository.js';
 import type { ProjectService } from './project.service.js';
+import type { Project } from '../types/project.js';
 import type { DependencyService } from './dependency.service.js';
 import { AppError } from '../errors/app-error.js';
 import { logger } from '../logging/logger.js';
@@ -22,14 +23,14 @@ import {
 } from '../types/enums.js';
 
 export interface TaskService {
-  createTask(input: unknown, projectIdOrName?: string): Result<Task>;
+  createTask(input: unknown, project: Project): Result<Task>;
   getTask(id: string): Result<Task>;
-  listTasks(filter: unknown): Result<Task[]>;
+  listTasks(project: Project, filter: unknown): Result<Task[]>;
   updateTask(id: string, input: unknown): Result<Task>;
   deleteTask(id: string): Result<void>;
   breakdownTask(parentId: string, subtasks: unknown[]): Result<Task[]>;
-  rerankTask(input: unknown, projectIdOrName?: string): Result<Task>;
-  searchTasks(query: string, projectIdOrName?: string): Result<SearchResult[]>;
+  rerankTask(input: unknown, project: Project): Result<Task>;
+  searchTasks(query: string, project: Project): Result<SearchResult[]>;
 }
 
 export class TaskServiceImpl implements TaskService {
@@ -39,16 +40,12 @@ export class TaskServiceImpl implements TaskService {
     private readonly getDependencyService: () => DependencyService,
   ) {}
 
-  createTask(input: unknown, projectIdOrName?: string): Result<Task> {
+  createTask(input: unknown, project: Project): Result<Task> {
     return logger.startSpan('TaskService.createTask', () => {
       const parsed = CreateTaskSchema.safeParse(input);
       if (!parsed.success) {
         return err(new AppError('VALIDATION', parsed.error.message));
       }
-
-      const projectRef = parsed.data.projectId ?? projectIdOrName;
-      const projectResult = this.projectService.resolveProject(projectRef);
-      if (!projectResult.ok) return projectResult;
 
       const taskLevel = getTaskLevel(parsed.data.type);
 
@@ -69,7 +66,6 @@ export class TaskServiceImpl implements TaskService {
         }
       }
 
-      const project = projectResult.value;
       const taskIdResult = this.projectService.nextTaskId(project);
       if (!taskIdResult.ok) return taskIdResult;
 
@@ -105,19 +101,16 @@ export class TaskServiceImpl implements TaskService {
     });
   }
 
-  listTasks(filter: unknown): Result<Task[]> {
+  listTasks(project: Project, filter: unknown): Result<Task[]> {
     return logger.startSpan('TaskService.listTasks', () => {
       const parsed = TaskFilterSchema.safeParse(filter);
       if (!parsed.success) {
         return err(new AppError('VALIDATION', parsed.error.message));
       }
 
-      const projectResult = this.projectService.resolveProject(parsed.data.projectId);
-      if (!projectResult.ok) return projectResult;
-
       const resolvedFilter: TaskFilter = {
         ...parsed.data,
-        projectId: projectResult.value.id,
+        projectId: project.id,
       };
 
       return this.repo.findMany(resolvedFilter);
@@ -251,7 +244,7 @@ export class TaskServiceImpl implements TaskService {
         return err(new AppError('VALIDATION', 'Breakdown parent must be an epic-level task'));
       }
 
-      const projectResult = this.projectService.resolveProject(parent.projectId);
+      const projectResult = this.projectService.getProject(parent.projectId);
       if (!projectResult.ok) return projectResult;
       const project = projectResult.value;
 
@@ -294,7 +287,7 @@ export class TaskServiceImpl implements TaskService {
    * If moving to the top, rank = first_rank - GAP.
    * If moving to the bottom, rank = last_rank + GAP.
    */
-  rerankTask(input: unknown, projectIdOrName?: string): Result<Task> {
+  rerankTask(input: unknown, project: Project): Result<Task> {
     return logger.startSpan('TaskService.rerankTask', () => {
       const parsed = RerankTaskSchema.safeParse(input);
       if (!parsed.success) {
@@ -334,11 +327,7 @@ export class TaskServiceImpl implements TaskService {
 
       const taskLevel = getTaskLevel(task.type);
 
-      // Resolve project for getting ranked list
-      const projectRef = projectIdOrName ?? task.projectId;
-      const projectResult = this.projectService.resolveProject(projectRef);
-      if (!projectResult.ok) return projectResult;
-      const projectId = projectResult.value.id;
+      const projectId = project.id;
 
       // Filtering excludes terminal and cross-project tasks — neither
       // participates in this rank space, so they cannot constrain it.
@@ -456,16 +445,13 @@ export class TaskServiceImpl implements TaskService {
     });
   }
 
-  searchTasks(query: string, projectIdOrName?: string): Result<SearchResult[]> {
+  searchTasks(query: string, project: Project): Result<SearchResult[]> {
     return logger.startSpan('TaskService.searchTasks', () => {
       if (!query.trim()) {
         return err(new AppError('VALIDATION', 'Search query cannot be empty'));
       }
 
-      const projectResult = this.projectService.resolveProject(projectIdOrName);
-      if (!projectResult.ok) return projectResult;
-
-      return this.repo.search(query, projectResult.value.id);
+      return this.repo.search(query, project.id);
     });
   }
 

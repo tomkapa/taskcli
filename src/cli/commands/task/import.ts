@@ -4,6 +4,7 @@ import type { Container } from '../../container.js';
 import { handleResult, printError } from '../../output.js';
 import { parseFieldMapping } from '../../../types/portability.js';
 import { AppError } from '../../../errors/app-error.js';
+import { withProject } from '../../helpers/project.js';
 
 export function registerTaskImport(parent: Command, container: Container): void {
   parent
@@ -31,7 +32,13 @@ export function registerTaskImport(parent: Command, container: Container): void 
 
       const fieldMapping = opts.map ? parseFieldMapping(opts.map) : undefined;
 
-      const result = container.portabilityService.importTasks(fileData, opts.project, fieldMapping);
+      const projectResult = withProject(container, opts.project);
+      if (!projectResult.ok) return printError(projectResult.error);
+      const result = container.portabilityService.importTasks(
+        fileData,
+        projectResult.value,
+        fieldMapping,
+      );
       handleResult(result);
     });
 }

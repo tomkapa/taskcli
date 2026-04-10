@@ -123,7 +123,7 @@ describe('ProjectService git remote', () => {
     });
   });
 
-  describe('resolveProjectWithGit', () => {
+  describe('resolveProject (git-aware)', () => {
     it('resolves by explicit name (ignores git detection)', () => {
       const mockDetect: DetectGitRemoteFn = () => ok('https://github.com/org/other.git');
       const svc = createTestService(mockDetect);
@@ -131,7 +131,7 @@ describe('ProjectService git remote', () => {
       svc.createProject({ name: 'GitMatch' });
       svc.linkGitRemote('GitMatch', 'https://github.com/org/other.git');
 
-      const result = svc.resolveProjectWithGit('Explicit');
+      const result = svc.resolveProject('Explicit');
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.name).toBe('Explicit');
@@ -144,7 +144,7 @@ describe('ProjectService git remote', () => {
       svc.createProject({ name: 'GitProject' });
       svc.linkGitRemote('GitProject', 'git@github.com:org/repo.git');
 
-      const result = svc.resolveProjectWithGit();
+      const result = svc.resolveProject();
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.name).toBe('GitProject');
@@ -155,7 +155,7 @@ describe('ProjectService git remote', () => {
       const svc = createTestService(mockDetect);
       svc.createProject({ name: 'DefaultFallback', isDefault: true });
 
-      const result = svc.resolveProjectWithGit();
+      const result = svc.resolveProject();
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.name).toBe('DefaultFallback');
@@ -166,7 +166,7 @@ describe('ProjectService git remote', () => {
       const svc = createTestService(mockDetect);
       svc.createProject({ name: 'DefaultNoGit', isDefault: true });
 
-      const result = svc.resolveProjectWithGit();
+      const result = svc.resolveProject();
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.name).toBe('DefaultNoGit');

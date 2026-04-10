@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import type { Container } from '../../container.js';
-import { handleResult } from '../../output.js';
+import { handleResult, printError } from '../../output.js';
+import { withProject } from '../../helpers/project.js';
 
 export function registerTaskRank(parent: Command, container: Container): void {
   parent
@@ -24,6 +25,8 @@ export function registerTaskRank(parent: Command, container: Container): void {
           project?: string;
         },
       ) => {
+        const projectResult = withProject(container, opts.project);
+        if (!projectResult.ok) return printError(projectResult.error);
         const result = container.taskService.rerankTask(
           {
             taskId: id,
@@ -33,7 +36,7 @@ export function registerTaskRank(parent: Command, container: Container): void {
             top: opts.top,
             bottom: opts.bottom,
           },
-          opts.project,
+          projectResult.value,
         );
         handleResult(result);
       },

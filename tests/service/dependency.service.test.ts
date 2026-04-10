@@ -3,9 +3,11 @@ import { DatabaseSync } from 'node:sqlite';
 import { createContainer } from '../../src/cli/container.js';
 import { runMigrations } from '../../src/db/migrator.js';
 import type { Container } from '../../src/cli/container.js';
+import type { Project } from '../../src/types/project.js';
 import { DependencyType } from '../../src/types/enums.js';
 
 let container: Container;
+let project: Project;
 
 beforeEach(() => {
   const db = new DatabaseSync(':memory:');
@@ -14,11 +16,14 @@ beforeEach(() => {
   runMigrations(db);
   container = createContainer(db);
   container.projectService.createProject({ name: 'Proj', isDefault: true });
+  const p = container.projectService.resolveProject();
+  if (!p.ok) throw new Error('setup failed');
+  project = p.value;
 });
 
 /** Helper: create a task and return its id, throwing on failure. */
 function createTask(name: string): string {
-  const result = container.taskService.createTask({ name });
+  const result = container.taskService.createTask({ name }, project);
   if (!result.ok) throw new Error(`Failed to create task: ${result.error.message}`);
   return result.value.id;
 }

@@ -3,9 +3,13 @@ import { DatabaseSync } from 'node:sqlite';
 import { createContainer } from '../../src/cli/container.js';
 import { runMigrations } from '../../src/db/migrator.js';
 import type { Container } from '../../src/cli/container.js';
+import type { DetectGitRemoteFn } from '../../src/service/project.service.js';
+import type { Project } from '../../src/types/project.js';
+import { ok } from '../../src/types/common.js';
 import { isTerminalStatus } from '../../src/types/enums.js';
 
 let container: Container;
+let project: Project;
 
 beforeEach(() => {
   const db = new DatabaseSync(':memory:');
@@ -69,10 +73,13 @@ describe('ProjectService', () => {
 describe('TaskService', () => {
   beforeEach(() => {
     container.projectService.createProject({ name: 'Proj', isDefault: true });
+    const p = container.projectService.resolveProject();
+    if (!p.ok) throw new Error('setup failed: could not resolve default project');
+    project = p.value;
   });
 
   it('creates a task in the default project', () => {
-    const result = container.taskService.createTask({ name: 'My task' });
+    const result = container.taskService.createTask({ name: 'My task' }, project);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.name).toBe('My task');
@@ -82,14 +89,17 @@ describe('TaskService', () => {
   });
 
   it('creates a task with all fields', () => {
-    const result = container.taskService.createTask({
-      name: 'Full task',
-      description: 'Description here',
-      type: 'bug',
-      status: 'todo',
-      technicalNotes: 'Some notes',
-      additionalRequirements: 'Some reqs',
-    });
+    const result = container.taskService.createTask(
+      {
+        name: 'Full task',
+        description: 'Description here',
+        type: 'bug',
+        status: 'todo',
+        technicalNotes: 'Some notes',
+        additionalRequirements: 'Some reqs',
+      },
+      project,
+    );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.type).toBe('bug');
@@ -97,17 +107,20 @@ describe('TaskService', () => {
   });
 
   it('creates a task with typed dependsOn entries', () => {
-    const t1 = container.taskService.createTask({ name: 'Dep target 1' });
-    const t2 = container.taskService.createTask({ name: 'Dep target 2' });
+    const t1 = container.taskService.createTask({ name: 'Dep target 1' }, project);
+    const t2 = container.taskService.createTask({ name: 'Dep target 2' }, project);
     if (!t1.ok || !t2.ok) throw new Error('setup failed');
 
-    const result = container.taskService.createTask({
-      name: 'Task with deps',
-      dependsOn: [
-        { id: t1.value.id, type: 'blocks' },
-        { id: t2.value.id, type: 'relates-to' },
-      ],
-    });
+    const result = container.taskService.createTask(
+      {
+        name: 'Task with deps',
+        dependsOn: [
+          { id: t1.value.id, type: 'blocks' },
+          { id: t2.value.id, type: 'relates-to' },
+        ],
+      },
+      project,
+    );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -123,45 +136,108 @@ describe('TaskService', () => {
   });
 
   it('assigns increasing ranks to new tasks', () => {
-    const r1 = container.taskService.createTask({ name: 'Task 1' });
-    const r2 = container.taskService.createTask({ name: 'Task 2' });
-    const r3 = container.taskService.createTask({ name: 'Task 3' });
+    const r1 = container.taskService.createTask({ name: 'Task 1' }, project);
+    const r2 = container.taskService.createTask({ name: 'Task 2' }, project);
+    const r3 = container.taskService.createTask({ name: 'Task 3' }, project);
     if (!r1.ok || !r2.ok || !r3.ok) throw new Error('setup failed');
     expect(r1.value.rank).toBeLessThan(r2.value.rank);
     expect(r2.value.rank).toBeLessThan(r3.value.rank);
   });
 
   it('lists tasks with filters', () => {
-    container.taskService.createTask({ name: 'Bug 1', type: 'bug' });
-    container.taskService.createTask({ name: 'Story 1', type: 'story' });
-    container.taskService.createTask({ name: 'Bug 2', type: 'bug' });
+    container.taskService.createTask({ name: 'Bug 1', type: 'bug' }, project);
+    container.taskService.createTask({ name: 'Story 1', type: 'story' }, project);
+    container.taskService.createTask({ name: 'Bug 2', type: 'bug' }, project);
 
-    const result = container.taskService.listTasks({ type: 'bug' });
+    const result = container.taskService.listTasks(project, { type: 'bug' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value).toHaveLength(2);
     expect(result.value.every((t) => t.type === 'bug')).toBe(true);
   });
 
-  it('listTasks scopes to default project when no project specified', () => {
+  it('listTasks scopes to explicit project', () => {
     const p2 = container.projectService.createProject({ name: 'Other' });
     if (!p2.ok) throw new Error('setup failed');
+    const otherProject = p2.value;
 
-    container.taskService.createTask({ name: 'Default task' });
-    container.taskService.createTask({ name: 'Other task' }, 'Other');
+    container.taskService.createTask({ name: 'Default task' }, project);
+    container.taskService.createTask({ name: 'Other task' }, otherProject);
 
-    const result = container.taskService.listTasks({ status: 'backlog' });
+    const result = container.taskService.listTasks(project, { status: 'backlog' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value).toHaveLength(1);
     expect(result.value[0]?.name).toBe('Default task');
   });
 
-  it('searches tasks by text', () => {
-    container.taskService.createTask({ name: 'Fix login bug' });
-    container.taskService.createTask({ name: 'Add dashboard' });
+  it('listTasks resolves project via git remote when no project specified', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec('PRAGMA journal_mode = WAL');
+    db.exec('PRAGMA foreign_keys = ON');
+    runMigrations(db);
+    const mockDetect: DetectGitRemoteFn = () => ok('git@github.com:org/ka.git');
+    const c = createContainer(db, '', mockDetect);
 
-    const result = container.taskService.listTasks({ search: 'login' });
+    c.projectService.createProject({ name: 'Default', isDefault: true, key: 'DEF' });
+    c.projectService.createProject({ name: 'KA', key: 'KA' });
+    c.projectService.linkGitRemote('KA', 'git@github.com:org/ka.git');
+
+    const defProj = c.projectService.resolveProject('Default');
+    const kaProj = c.projectService.resolveProject('KA');
+    if (!defProj.ok || !kaProj.ok) throw new Error('setup failed');
+
+    c.taskService.createTask({ name: 'Default task' }, defProj.value);
+    c.taskService.createTask({ name: 'KA task' }, kaProj.value);
+
+    // resolveProject() with no args uses git remote → resolves to KA
+    const resolvedProject = c.projectService.resolveProject();
+    if (!resolvedProject.ok) throw new Error('setup failed');
+    expect(resolvedProject.value.key).toBe('KA');
+
+    const result = c.taskService.listTasks(resolvedProject.value, { status: 'backlog' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toHaveLength(1);
+    expect(result.value[0]?.name).toBe('KA task');
+  });
+
+  it('searchTasks resolves project via git remote when no project specified', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec('PRAGMA journal_mode = WAL');
+    db.exec('PRAGMA foreign_keys = ON');
+    runMigrations(db);
+    const mockDetect: DetectGitRemoteFn = () => ok('git@github.com:org/ka.git');
+    const c = createContainer(db, '', mockDetect);
+
+    c.projectService.createProject({ name: 'Default', isDefault: true, key: 'DEF' });
+    c.projectService.createProject({ name: 'KA', key: 'KA' });
+    c.projectService.linkGitRemote('KA', 'git@github.com:org/ka.git');
+
+    const defProj = c.projectService.resolveProject('Default');
+    const kaProj = c.projectService.resolveProject('KA');
+    if (!defProj.ok || !kaProj.ok) throw new Error('setup failed');
+
+    c.taskService.createTask({ name: 'Fix login' }, defProj.value);
+    c.taskService.createTask({ name: 'Fix login KA' }, kaProj.value);
+
+    // resolveProject() with no args uses git remote → resolves to KA
+    const resolvedProject = c.projectService.resolveProject();
+    if (!resolvedProject.ok) throw new Error('setup failed');
+    expect(resolvedProject.value.key).toBe('KA');
+
+    const result = c.taskService.searchTasks('login', resolvedProject.value);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toHaveLength(1);
+    expect(result.value[0]?.task.name).toBe('Fix login KA');
+  });
+
+  it('searches tasks by text', () => {
+    container.taskService.createTask({ name: 'Fix login bug' }, project);
+    container.taskService.createTask({ name: 'Add dashboard' }, project);
+
+    const result = container.taskService.listTasks(project, { search: 'login' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value).toHaveLength(1);
@@ -169,7 +245,7 @@ describe('TaskService', () => {
   });
 
   it('updates a task', () => {
-    const created = container.taskService.createTask({ name: 'Original' });
+    const created = container.taskService.createTask({ name: 'Original' }, project);
     if (!created.ok) throw new Error('setup failed');
 
     const result = container.taskService.updateTask(created.value.id, {
@@ -183,8 +259,8 @@ describe('TaskService', () => {
   });
 
   it('rejects transitioning to in-progress when non-terminal blockers exist', () => {
-    const blocker = container.taskService.createTask({ name: 'Blocker' });
-    const blocked = container.taskService.createTask({ name: 'Blocked' });
+    const blocker = container.taskService.createTask({ name: 'Blocker' }, project);
+    const blocked = container.taskService.createTask({ name: 'Blocked' }, project);
     if (!blocker.ok || !blocked.ok) throw new Error('setup failed');
 
     container.dependencyService.addDependency({
@@ -200,8 +276,8 @@ describe('TaskService', () => {
   });
 
   it('allows transitioning to in-progress when all blockers are terminal', () => {
-    const blocker = container.taskService.createTask({ name: 'Blocker' });
-    const blocked = container.taskService.createTask({ name: 'Blocked' });
+    const blocker = container.taskService.createTask({ name: 'Blocker' }, project);
+    const blocked = container.taskService.createTask({ name: 'Blocked' }, project);
     if (!blocker.ok || !blocked.ok) throw new Error('setup failed');
 
     container.dependencyService.addDependency({
@@ -219,10 +295,13 @@ describe('TaskService', () => {
   });
 
   it('appends to technical notes', () => {
-    const created = container.taskService.createTask({
-      name: 'Task',
-      technicalNotes: 'Initial note',
-    });
+    const created = container.taskService.createTask(
+      {
+        name: 'Task',
+        technicalNotes: 'Initial note',
+      },
+      project,
+    );
     if (!created.ok) throw new Error('setup failed');
 
     const result = container.taskService.updateTask(created.value.id, {
@@ -236,7 +315,7 @@ describe('TaskService', () => {
   });
 
   it('deletes a task', () => {
-    const created = container.taskService.createTask({ name: 'To delete' });
+    const created = container.taskService.createTask({ name: 'To delete' }, project);
     if (!created.ok) throw new Error('setup failed');
 
     const result = container.taskService.deleteTask(created.value.id);
@@ -247,8 +326,8 @@ describe('TaskService', () => {
   });
 
   it('soft-deletes: task disappears from list but dependency edges survive', () => {
-    const t1 = container.taskService.createTask({ name: 'Blocker' });
-    const t2 = container.taskService.createTask({ name: 'Blocked' });
+    const t1 = container.taskService.createTask({ name: 'Blocker' }, project);
+    const t2 = container.taskService.createTask({ name: 'Blocked' }, project);
     if (!t1.ok || !t2.ok) throw new Error('setup failed');
 
     container.dependencyService.addDependency({
@@ -260,7 +339,7 @@ describe('TaskService', () => {
     container.taskService.deleteTask(t1.value.id);
 
     // Blocker no longer appears in task list
-    const list = container.taskService.listTasks({ status: 'backlog' });
+    const list = container.taskService.listTasks(project, { status: 'backlog' });
     expect(list.ok).toBe(true);
     if (!list.ok) return;
     expect(list.value.find((t) => t.id === t1.value.id)).toBeUndefined();
@@ -277,7 +356,7 @@ describe('TaskService', () => {
   });
 
   it('soft-deletes: double delete returns NOT_FOUND', () => {
-    const created = container.taskService.createTask({ name: 'Task' });
+    const created = container.taskService.createTask({ name: 'Task' }, project);
     if (!created.ok) throw new Error('setup failed');
 
     container.taskService.deleteTask(created.value.id);
@@ -288,7 +367,7 @@ describe('TaskService', () => {
   });
 
   it('breaks down a task into subtasks', () => {
-    const parent = container.taskService.createTask({ name: 'Parent', type: 'epic' });
+    const parent = container.taskService.createTask({ name: 'Parent', type: 'epic' }, project);
     if (!parent.ok) throw new Error('setup failed');
 
     const result = container.taskService.breakdownTask(parent.value.id, [
@@ -303,10 +382,13 @@ describe('TaskService', () => {
   });
 
   it('rejects invalid task type', () => {
-    const result = container.taskService.createTask({
-      name: 'Bad task',
-      type: 'invalid' as never,
-    });
+    const result = container.taskService.createTask(
+      {
+        name: 'Bad task',
+        type: 'invalid' as never,
+      },
+      project,
+    );
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('VALIDATION');
@@ -321,38 +403,38 @@ describe('TaskService', () => {
 
   describe('rerankTask', () => {
     it('re-ranks a task to a specific position', () => {
-      const t1 = container.taskService.createTask({ name: 'Task 1' });
-      const t2 = container.taskService.createTask({ name: 'Task 2' });
-      const t3 = container.taskService.createTask({ name: 'Task 3' });
+      const t1 = container.taskService.createTask({ name: 'Task 1' }, project);
+      const t2 = container.taskService.createTask({ name: 'Task 2' }, project);
+      const t3 = container.taskService.createTask({ name: 'Task 3' }, project);
       if (!t1.ok || !t2.ok || !t3.ok) throw new Error('setup failed');
 
       // Move task 3 to position 1
-      const result = container.taskService.rerankTask({
-        taskId: t3.value.id,
-        position: 1,
-      });
+      const result = container.taskService.rerankTask(
+        { taskId: t3.value.id, position: 1 },
+        project,
+      );
       expect(result.ok).toBe(true);
       if (!result.ok) return;
 
-      const list = container.taskService.listTasks({ status: 'backlog' });
+      const list = container.taskService.listTasks(project, { status: 'backlog' });
       if (!list.ok) throw new Error('list failed');
       expect(list.value[0]?.name).toBe('Task 3');
     });
 
     it('re-ranks a task after another', () => {
-      const t1 = container.taskService.createTask({ name: 'Task 1' });
-      const t2 = container.taskService.createTask({ name: 'Task 2' });
-      const t3 = container.taskService.createTask({ name: 'Task 3' });
+      const t1 = container.taskService.createTask({ name: 'Task 1' }, project);
+      const t2 = container.taskService.createTask({ name: 'Task 2' }, project);
+      const t3 = container.taskService.createTask({ name: 'Task 3' }, project);
       if (!t1.ok || !t2.ok || !t3.ok) throw new Error('setup failed');
 
       // Move task 3 after task 1
-      const result = container.taskService.rerankTask({
-        taskId: t3.value.id,
-        afterId: t1.value.id,
-      });
+      const result = container.taskService.rerankTask(
+        { taskId: t3.value.id, afterId: t1.value.id },
+        project,
+      );
       expect(result.ok).toBe(true);
 
-      const list = container.taskService.listTasks({ status: 'backlog' });
+      const list = container.taskService.listTasks(project, { status: 'backlog' });
       if (!list.ok) throw new Error('list failed');
       expect(list.value[0]?.name).toBe('Task 1');
       expect(list.value[1]?.name).toBe('Task 3');
@@ -360,36 +442,36 @@ describe('TaskService', () => {
     });
 
     it('re-ranks a task before another', () => {
-      const t1 = container.taskService.createTask({ name: 'Task 1' });
-      const t2 = container.taskService.createTask({ name: 'Task 2' });
-      const t3 = container.taskService.createTask({ name: 'Task 3' });
+      const t1 = container.taskService.createTask({ name: 'Task 1' }, project);
+      const t2 = container.taskService.createTask({ name: 'Task 2' }, project);
+      const t3 = container.taskService.createTask({ name: 'Task 3' }, project);
       if (!t1.ok || !t2.ok || !t3.ok) throw new Error('setup failed');
 
       // Move task 3 before task 1
-      const result = container.taskService.rerankTask({
-        taskId: t3.value.id,
-        beforeId: t1.value.id,
-      });
+      const result = container.taskService.rerankTask(
+        { taskId: t3.value.id, beforeId: t1.value.id },
+        project,
+      );
       expect(result.ok).toBe(true);
 
-      const list = container.taskService.listTasks({ status: 'backlog' });
+      const list = container.taskService.listTasks(project, { status: 'backlog' });
       if (!list.ok) throw new Error('list failed');
       expect(list.value[0]?.name).toBe('Task 3');
       expect(list.value[1]?.name).toBe('Task 1');
     });
 
     it('rejects when no positioning option given', () => {
-      const t1 = container.taskService.createTask({ name: 'Task 1' });
+      const t1 = container.taskService.createTask({ name: 'Task 1' }, project);
       if (!t1.ok) throw new Error('setup failed');
 
-      const result = container.taskService.rerankTask({ taskId: t1.value.id });
+      const result = container.taskService.rerankTask({ taskId: t1.value.id }, project);
       expect(result.ok).toBe(false);
     });
 
     it('rejects moving a blocked task above its blocker', () => {
       // t1 at rank 1000, t2 at rank 2000; t2 depends on t1
-      const t1 = container.taskService.createTask({ name: 'Blocker' });
-      const t2 = container.taskService.createTask({ name: 'Blocked' });
+      const t1 = container.taskService.createTask({ name: 'Blocker' }, project);
+      const t2 = container.taskService.createTask({ name: 'Blocked' }, project);
       if (!t1.ok || !t2.ok) throw new Error('setup failed');
 
       container.dependencyService.addDependency({
@@ -398,10 +480,10 @@ describe('TaskService', () => {
       });
 
       // Try to move t2 to position 1 (above its blocker t1)
-      const result = container.taskService.rerankTask({
-        taskId: t2.value.id,
-        position: 1,
-      });
+      const result = container.taskService.rerankTask(
+        { taskId: t2.value.id, position: 1 },
+        project,
+      );
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.code).toBe('VALIDATION');
@@ -410,8 +492,8 @@ describe('TaskService', () => {
 
     it('rejects moving a blocker below its dependent', () => {
       // t1 at rank 1000, t2 at rank 2000; t2 depends on t1
-      const t1 = container.taskService.createTask({ name: 'Blocker' });
-      const t2 = container.taskService.createTask({ name: 'Blocked' });
+      const t1 = container.taskService.createTask({ name: 'Blocker' }, project);
+      const t2 = container.taskService.createTask({ name: 'Blocked' }, project);
       if (!t1.ok || !t2.ok) throw new Error('setup failed');
 
       container.dependencyService.addDependency({
@@ -420,10 +502,10 @@ describe('TaskService', () => {
       });
 
       // Try to move t1 to position 2 (below its dependent t2)
-      const result = container.taskService.rerankTask({
-        taskId: t1.value.id,
-        position: 2,
-      });
+      const result = container.taskService.rerankTask(
+        { taskId: t1.value.id, position: 2 },
+        project,
+      );
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.code).toBe('VALIDATION');
@@ -432,9 +514,9 @@ describe('TaskService', () => {
 
     it('allows reranking above a terminal blocker (done tasks do not constrain)', () => {
       // t1 blocks t2; when t1 is done, t2 should be freely rerankable
-      const t1 = container.taskService.createTask({ name: 'Blocker' });
-      const t2 = container.taskService.createTask({ name: 'Blocked' });
-      const t3 = container.taskService.createTask({ name: 'Other' });
+      const t1 = container.taskService.createTask({ name: 'Blocker' }, project);
+      const t2 = container.taskService.createTask({ name: 'Blocked' }, project);
+      const t3 = container.taskService.createTask({ name: 'Other' }, project);
       if (!t1.ok || !t2.ok || !t3.ok) throw new Error('setup failed');
 
       container.dependencyService.addDependency({
@@ -447,18 +529,18 @@ describe('TaskService', () => {
 
       // t2 should now be able to rank at position 1, even though
       // its blocker t1 has a higher rank number (at the bottom)
-      const result = container.taskService.rerankTask({
-        taskId: t2.value.id,
-        position: 1,
-      });
+      const result = container.taskService.rerankTask(
+        { taskId: t2.value.id, position: 1 },
+        project,
+      );
       expect(result.ok).toBe(true);
     });
 
     it('allows reranking below a terminal dependent (done tasks do not constrain)', () => {
       // t2 depends on t1; when t2 is done, t1 should be freely rerankable
-      const t1 = container.taskService.createTask({ name: 'Blocker' });
-      const t2 = container.taskService.createTask({ name: 'Blocked' });
-      const t3 = container.taskService.createTask({ name: 'Other' });
+      const t1 = container.taskService.createTask({ name: 'Blocker' }, project);
+      const t2 = container.taskService.createTask({ name: 'Blocked' }, project);
+      const t3 = container.taskService.createTask({ name: 'Other' }, project);
       if (!t1.ok || !t2.ok || !t3.ok) throw new Error('setup failed');
 
       container.dependencyService.addDependency({
@@ -471,17 +553,17 @@ describe('TaskService', () => {
 
       // t1 should now be freely rerankable even though its dependent
       // t2 is at the bottom with a higher rank number
-      const result = container.taskService.rerankTask({
-        taskId: t1.value.id,
-        position: 2,
-      });
+      const result = container.taskService.rerankTask(
+        { taskId: t1.value.id, position: 2 },
+        project,
+      );
       expect(result.ok).toBe(true);
     });
 
     it('allows reranking when dependency order is preserved', () => {
-      const t1 = container.taskService.createTask({ name: 'Blocker' });
-      const t2 = container.taskService.createTask({ name: 'Middle' });
-      const t3 = container.taskService.createTask({ name: 'Blocked' });
+      const t1 = container.taskService.createTask({ name: 'Blocker' }, project);
+      const t2 = container.taskService.createTask({ name: 'Middle' }, project);
+      const t3 = container.taskService.createTask({ name: 'Blocked' }, project);
       if (!t1.ok || !t2.ok || !t3.ok) throw new Error('setup failed');
 
       // t3 depends on t1
@@ -491,16 +573,16 @@ describe('TaskService', () => {
       });
 
       // Move t3 after t2 (still below t1) — should succeed
-      const result = container.taskService.rerankTask({
-        taskId: t3.value.id,
-        afterId: t2.value.id,
-      });
+      const result = container.taskService.rerankTask(
+        { taskId: t3.value.id, afterId: t2.value.id },
+        project,
+      );
       expect(result.ok).toBe(true);
     });
 
     it('allows using a non-backlog task as anchor (--after/--before)', () => {
-      const t1 = container.taskService.createTask({ name: 'Todo task' });
-      const t2 = container.taskService.createTask({ name: 'Backlog task' });
+      const t1 = container.taskService.createTask({ name: 'Todo task' }, project);
+      const t2 = container.taskService.createTask({ name: 'Backlog task' }, project);
       if (!t1.ok || !t2.ok) throw new Error('setup failed');
 
       // Move t1 to 'todo' status
@@ -508,40 +590,40 @@ describe('TaskService', () => {
       expect(updated.ok).toBe(true);
 
       // Rerank t2 after t1 (which is now 'todo', not 'backlog')
-      const result = container.taskService.rerankTask({
-        taskId: t2.value.id,
-        afterId: t1.value.id,
-      });
+      const result = container.taskService.rerankTask(
+        { taskId: t2.value.id, afterId: t1.value.id },
+        project,
+      );
       expect(result.ok).toBe(true);
     });
 
     it('allows using an in-progress task as anchor (--before)', () => {
-      const t1 = container.taskService.createTask({ name: 'In-progress task' });
-      const t2 = container.taskService.createTask({ name: 'Backlog task' });
+      const t1 = container.taskService.createTask({ name: 'In-progress task' }, project);
+      const t2 = container.taskService.createTask({ name: 'Backlog task' }, project);
       if (!t1.ok || !t2.ok) throw new Error('setup failed');
 
       container.taskService.updateTask(t1.value.id, { status: 'in-progress' });
 
-      const result = container.taskService.rerankTask({
-        taskId: t2.value.id,
-        beforeId: t1.value.id,
-      });
+      const result = container.taskService.rerankTask(
+        { taskId: t2.value.id, beforeId: t1.value.id },
+        project,
+      );
       expect(result.ok).toBe(true);
     });
 
     it('moves a task to the top with top:true', () => {
-      const t1 = container.taskService.createTask({ name: 'Task 1' });
-      const t2 = container.taskService.createTask({ name: 'Task 2' });
-      const t3 = container.taskService.createTask({ name: 'Task 3' });
+      const t1 = container.taskService.createTask({ name: 'Task 1' }, project);
+      const t2 = container.taskService.createTask({ name: 'Task 2' }, project);
+      const t3 = container.taskService.createTask({ name: 'Task 3' }, project);
       if (!t1.ok || !t2.ok || !t3.ok) throw new Error('setup failed');
 
-      const result = container.taskService.rerankTask({
-        taskId: t3.value.id,
-        top: true,
-      });
+      const result = container.taskService.rerankTask(
+        { taskId: t3.value.id, top: true },
+        project,
+      );
       expect(result.ok).toBe(true);
 
-      const list = container.taskService.listTasks({ status: 'backlog' });
+      const list = container.taskService.listTasks(project, { status: 'backlog' });
       if (!list.ok) throw new Error('list failed');
       expect(list.value[0]?.name).toBe('Task 3');
       expect(list.value[1]?.name).toBe('Task 1');
@@ -549,18 +631,18 @@ describe('TaskService', () => {
     });
 
     it('moves a task to the bottom with bottom:true', () => {
-      const t1 = container.taskService.createTask({ name: 'Task 1' });
-      const t2 = container.taskService.createTask({ name: 'Task 2' });
-      const t3 = container.taskService.createTask({ name: 'Task 3' });
+      const t1 = container.taskService.createTask({ name: 'Task 1' }, project);
+      const t2 = container.taskService.createTask({ name: 'Task 2' }, project);
+      const t3 = container.taskService.createTask({ name: 'Task 3' }, project);
       if (!t1.ok || !t2.ok || !t3.ok) throw new Error('setup failed');
 
-      const result = container.taskService.rerankTask({
-        taskId: t1.value.id,
-        bottom: true,
-      });
+      const result = container.taskService.rerankTask(
+        { taskId: t1.value.id, bottom: true },
+        project,
+      );
       expect(result.ok).toBe(true);
 
-      const list = container.taskService.listTasks({ status: 'backlog' });
+      const list = container.taskService.listTasks(project, { status: 'backlog' });
       if (!list.ok) throw new Error('list failed');
       expect(list.value[0]?.name).toBe('Task 2');
       expect(list.value[1]?.name).toBe('Task 3');
@@ -571,9 +653,9 @@ describe('TaskService', () => {
       // Reproduces the collision case: when a middle task is completed, its
       // rank is pushed past the remaining active tasks. Moving an active task
       // to "bottom" must still place it ABOVE the done task in the listing.
-      const t1 = container.taskService.createTask({ name: 'Task 1' });
-      const t2 = container.taskService.createTask({ name: 'Task 2' });
-      const t3 = container.taskService.createTask({ name: 'Task 3' });
+      const t1 = container.taskService.createTask({ name: 'Task 1' }, project);
+      const t2 = container.taskService.createTask({ name: 'Task 2' }, project);
+      const t3 = container.taskService.createTask({ name: 'Task 3' }, project);
       if (!t1.ok || !t2.ok || !t3.ok) throw new Error('setup failed');
 
       // Complete t2 — it gets a rank above all current tasks
@@ -581,15 +663,15 @@ describe('TaskService', () => {
       expect(done.ok).toBe(true);
 
       // Move t1 to the bottom of active tasks
-      const result = container.taskService.rerankTask({
-        taskId: t1.value.id,
-        bottom: true,
-      });
+      const result = container.taskService.rerankTask(
+        { taskId: t1.value.id, bottom: true },
+        project,
+      );
       expect(result.ok).toBe(true);
 
       // List ALL tasks ordered by rank — t1 must come after t3 (active)
       // and BEFORE t2 (done), regardless of t2's elevated terminal rank.
-      const all = container.taskService.listTasks({});
+      const all = container.taskService.listTasks(project, {});
       if (!all.ok) throw new Error('list failed');
       const order = all.value.map((t) => t.name);
       const idxT1 = order.indexOf('Task 1');
@@ -600,25 +682,21 @@ describe('TaskService', () => {
     });
 
     it('top:true on an empty active list still succeeds for a single task', () => {
-      const t1 = container.taskService.createTask({ name: 'Solo' });
+      const t1 = container.taskService.createTask({ name: 'Solo' }, project);
       if (!t1.ok) throw new Error('setup failed');
 
-      const result = container.taskService.rerankTask({
-        taskId: t1.value.id,
-        top: true,
-      });
+      const result = container.taskService.rerankTask({ taskId: t1.value.id, top: true }, project);
       expect(result.ok).toBe(true);
     });
 
     it('rejects when both top and bottom are specified', () => {
-      const t1 = container.taskService.createTask({ name: 'Task 1' });
+      const t1 = container.taskService.createTask({ name: 'Task 1' }, project);
       if (!t1.ok) throw new Error('setup failed');
 
-      const result = container.taskService.rerankTask({
-        taskId: t1.value.id,
-        top: true,
-        bottom: true,
-      });
+      const result = container.taskService.rerankTask(
+        { taskId: t1.value.id, top: true, bottom: true },
+        project,
+      );
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.code).toBe('VALIDATION');
@@ -627,9 +705,9 @@ describe('TaskService', () => {
     it('top:true clamps under the blocker instead of failing', () => {
       // t1 (blocker) → t2 (blocked) → t3 (other). Asking to move t3 to top
       // should not error: it should land immediately after t1, above t2.
-      const t1 = container.taskService.createTask({ name: 'Blocker' });
-      const t2 = container.taskService.createTask({ name: 'Other' });
-      const t3 = container.taskService.createTask({ name: 'Blocked' });
+      const t1 = container.taskService.createTask({ name: 'Blocker' }, project);
+      const t2 = container.taskService.createTask({ name: 'Other' }, project);
+      const t3 = container.taskService.createTask({ name: 'Blocked' }, project);
       if (!t1.ok || !t2.ok || !t3.ok) throw new Error('setup failed');
 
       container.dependencyService.addDependency({
@@ -637,17 +715,17 @@ describe('TaskService', () => {
         dependsOnId: t1.value.id,
       });
 
-      const result = container.taskService.rerankTask({
-        taskId: t3.value.id,
-        top: true,
-      });
+      const result = container.taskService.rerankTask(
+        { taskId: t3.value.id, top: true },
+        project,
+      );
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       // t3's new rank must be greater than t1's rank (blocker satisfied)
       expect(result.value.rank).toBeGreaterThan(t1.value.rank);
 
       // Verify the order: t1 (blocker) → t3 (clamped here) → t2
-      const list = container.taskService.listTasks({});
+      const list = container.taskService.listTasks(project, {});
       if (!list.ok) throw new Error('list failed');
       const order = list.value.map((t) => t.name);
       expect(order.indexOf('Blocker')).toBeLessThan(order.indexOf('Blocked'));
@@ -657,9 +735,9 @@ describe('TaskService', () => {
     it('bottom:true clamps above the dependent instead of failing', () => {
       // t1 → t2 → t3. t3 depends on t1 (so t1 has dependent t3).
       // Asking to move t1 to bottom should clamp it to right before t3.
-      const t1 = container.taskService.createTask({ name: 'Has dependent' });
-      const t2 = container.taskService.createTask({ name: 'Other' });
-      const t3 = container.taskService.createTask({ name: 'Dependent' });
+      const t1 = container.taskService.createTask({ name: 'Has dependent' }, project);
+      const t2 = container.taskService.createTask({ name: 'Other' }, project);
+      const t3 = container.taskService.createTask({ name: 'Dependent' }, project);
       if (!t1.ok || !t2.ok || !t3.ok) throw new Error('setup failed');
 
       container.dependencyService.addDependency({
@@ -667,17 +745,17 @@ describe('TaskService', () => {
         dependsOnId: t1.value.id,
       });
 
-      const result = container.taskService.rerankTask({
-        taskId: t1.value.id,
-        bottom: true,
-      });
+      const result = container.taskService.rerankTask(
+        { taskId: t1.value.id, bottom: true },
+        project,
+      );
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       // t1's new rank must be less than t3's rank (dependent satisfied)
       expect(result.value.rank).toBeLessThan(t3.value.rank);
 
       // Verify the order: t2 → t1 (clamped here) → t3
-      const list = container.taskService.listTasks({});
+      const list = container.taskService.listTasks(project, {});
       if (!list.ok) throw new Error('list failed');
       const order = list.value.map((t) => t.name);
       expect(order.indexOf('Other')).toBeLessThan(order.indexOf('Has dependent'));
@@ -686,8 +764,8 @@ describe('TaskService', () => {
 
     it('--position 1 still rejects when blocked (only top/bottom clamp)', () => {
       // The explicit --position path should preserve its strict behavior.
-      const t1 = container.taskService.createTask({ name: 'Blocker' });
-      const t2 = container.taskService.createTask({ name: 'Blocked' });
+      const t1 = container.taskService.createTask({ name: 'Blocker' }, project);
+      const t2 = container.taskService.createTask({ name: 'Blocked' }, project);
       if (!t1.ok || !t2.ok) throw new Error('setup failed');
 
       container.dependencyService.addDependency({
@@ -695,10 +773,10 @@ describe('TaskService', () => {
         dependsOnId: t1.value.id,
       });
 
-      const result = container.taskService.rerankTask({
-        taskId: t2.value.id,
-        position: 1,
-      });
+      const result = container.taskService.rerankTask(
+        { taskId: t2.value.id, position: 1 },
+        project,
+      );
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.code).toBe('VALIDATION');
@@ -706,16 +784,16 @@ describe('TaskService', () => {
     });
 
     it('rejects terminal task as anchor', () => {
-      const t1 = container.taskService.createTask({ name: 'Done task' });
-      const t2 = container.taskService.createTask({ name: 'Backlog task' });
+      const t1 = container.taskService.createTask({ name: 'Done task' }, project);
+      const t2 = container.taskService.createTask({ name: 'Backlog task' }, project);
       if (!t1.ok || !t2.ok) throw new Error('setup failed');
 
       container.taskService.updateTask(t1.value.id, { status: 'done' });
 
-      const result = container.taskService.rerankTask({
-        taskId: t2.value.id,
-        afterId: t1.value.id,
-      });
+      const result = container.taskService.rerankTask(
+        { taskId: t2.value.id, afterId: t1.value.id },
+        project,
+      );
       expect(result.ok).toBe(false);
     });
   });
@@ -748,8 +826,8 @@ describe('TaskService', () => {
       // IEEE 754 double precision (~52 bits of mantissa). After ~50 inserts
       // the midpoint equals the terminal endpoint, producing duplicate ranks
       // and subsequent inserts interleave with terminal tasks.
-      const anchor = container.taskService.createTask({ name: 'Anchor' });
-      const willBeDone = container.taskService.createTask({ name: 'Will be done' });
+      const anchor = container.taskService.createTask({ name: 'Anchor' }, project);
+      const willBeDone = container.taskService.createTask({ name: 'Will be done' }, project);
       if (!anchor.ok || !willBeDone.ok) throw new Error('setup failed');
 
       const doneResult = container.taskService.updateTask(willBeDone.value.id, {
@@ -760,11 +838,11 @@ describe('TaskService', () => {
       // Insert well past the double-precision subdivision limit (~52).
       const N = 80;
       for (let i = 0; i < N; i++) {
-        const r = container.taskService.createTask({ name: `Task ${i}` });
+        const r = container.taskService.createTask({ name: `Task ${i}` }, project);
         expect(r.ok).toBe(true);
       }
 
-      const all = container.taskService.listTasks({});
+      const all = container.taskService.listTasks(project, {});
       if (!all.ok) throw new Error('list failed');
       // Anchor + willBeDone + N new = N + 2
       expect(all.value).toHaveLength(N + 2);
@@ -778,7 +856,7 @@ describe('TaskService', () => {
       const N = 60;
       let prevId: string | null = null;
       for (let i = 0; i < N; i++) {
-        const created = container.taskService.createTask({ name: `T${i}` });
+        const created = container.taskService.createTask({ name: `T${i}` }, project);
         expect(created.ok).toBe(true);
         if (!created.ok) throw new Error('create failed');
         if (prevId) {
@@ -788,7 +866,7 @@ describe('TaskService', () => {
         prevId = created.value.id;
       }
 
-      const all = container.taskService.listTasks({});
+      const all = container.taskService.listTasks(project, {});
       if (!all.ok) throw new Error('list failed');
       assertRankInvariants(all.value);
     });
@@ -799,23 +877,23 @@ describe('TaskService', () => {
       // between task A and whatever previously sat right after it, so the
       // midpoint converges toward A.rank and eventually hits the double
       // precision wall.
-      const a = container.taskService.createTask({ name: 'A' });
-      const z = container.taskService.createTask({ name: 'Z' });
+      const a = container.taskService.createTask({ name: 'A' }, project);
+      const z = container.taskService.createTask({ name: 'Z' }, project);
       if (!a.ok || !z.ok) throw new Error('setup failed');
 
       const N = 80;
       for (let i = 0; i < N; i++) {
-        const created = container.taskService.createTask({ name: `T${i}` });
+        const created = container.taskService.createTask({ name: `T${i}` }, project);
         expect(created.ok).toBe(true);
         if (!created.ok) throw new Error('create failed');
-        const r = container.taskService.rerankTask({
-          taskId: created.value.id,
-          afterId: a.value.id,
-        });
+        const r = container.taskService.rerankTask(
+          { taskId: created.value.id, afterId: a.value.id },
+          project,
+        );
         expect(r.ok).toBe(true);
       }
 
-      const all = container.taskService.listTasks({});
+      const all = container.taskService.listTasks(project, {});
       if (!all.ok) throw new Error('list failed');
       assertRankInvariants(all.value);
       // A must be first, Z must be last.
@@ -826,18 +904,18 @@ describe('TaskService', () => {
     it('scoping: epic rank-precision collapse does not touch work-item ranks', () => {
       // The rebalance must be scoped by level: exhausting epic precision
       // should not rewrite work-item ranks (and vice versa).
-      const story = container.taskService.createTask({ name: 'Story', type: 'story' });
+      const story = container.taskService.createTask({ name: 'Story', type: 'story' }, project);
       if (!story.ok) throw new Error('setup failed');
       const originalStoryRank = story.value.rank;
 
       // Force an epic-level precision collapse.
-      const e1 = container.taskService.createTask({ name: 'E1', type: 'epic' });
-      const eDone = container.taskService.createTask({ name: 'EDone', type: 'epic' });
+      const e1 = container.taskService.createTask({ name: 'E1', type: 'epic' }, project);
+      const eDone = container.taskService.createTask({ name: 'EDone', type: 'epic' }, project);
       if (!e1.ok || !eDone.ok) throw new Error('setup failed');
       container.taskService.updateTask(eDone.value.id, { status: 'done' });
 
       for (let i = 0; i < 70; i++) {
-        const r = container.taskService.createTask({ name: `E${i + 2}`, type: 'epic' });
+        const r = container.taskService.createTask({ name: `E${i + 2}`, type: 'epic' }, project);
         expect(r.ok).toBe(true);
       }
 
@@ -851,7 +929,7 @@ describe('TaskService', () => {
 
   describe('epic type and level system', () => {
     it('creates an epic task', () => {
-      const result = container.taskService.createTask({ name: 'My Epic', type: 'epic' });
+      const result = container.taskService.createTask({ name: 'My Epic', type: 'epic' }, project);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.type).toBe('epic');
@@ -859,14 +937,17 @@ describe('TaskService', () => {
     });
 
     it('rejects epic with a parentId', () => {
-      const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' });
+      const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' }, project);
       if (!epic.ok) throw new Error('setup failed');
 
-      const result = container.taskService.createTask({
-        name: 'Nested Epic',
-        type: 'epic',
-        parentId: epic.value.id,
-      });
+      const result = container.taskService.createTask(
+        {
+          name: 'Nested Epic',
+          type: 'epic',
+          parentId: epic.value.id,
+        },
+        project,
+      );
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.code).toBe('VALIDATION');
@@ -874,28 +955,37 @@ describe('TaskService', () => {
     });
 
     it('allows level 2 task as child of epic', () => {
-      const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' });
+      const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' }, project);
       if (!epic.ok) throw new Error('setup failed');
 
-      const story = container.taskService.createTask({
-        name: 'Story',
-        type: 'story',
-        parentId: epic.value.id,
-      });
+      const story = container.taskService.createTask(
+        {
+          name: 'Story',
+          type: 'story',
+          parentId: epic.value.id,
+        },
+        project,
+      );
       expect(story.ok).toBe(true);
       if (!story.ok) return;
       expect(story.value.parentId).toBe(epic.value.id);
     });
 
     it('rejects level 2 task as child of another level 2 task', () => {
-      const story = container.taskService.createTask({ name: 'Parent Story', type: 'story' });
+      const story = container.taskService.createTask(
+        { name: 'Parent Story', type: 'story' },
+        project,
+      );
       if (!story.ok) throw new Error('setup failed');
 
-      const result = container.taskService.createTask({
-        name: 'Child Story',
-        type: 'story',
-        parentId: story.value.id,
-      });
+      const result = container.taskService.createTask(
+        {
+          name: 'Child Story',
+          type: 'story',
+          parentId: story.value.id,
+        },
+        project,
+      );
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.code).toBe('VALIDATION');
@@ -903,13 +993,16 @@ describe('TaskService', () => {
     });
 
     it('rejects changing epic to story when it has children', () => {
-      const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' });
+      const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' }, project);
       if (!epic.ok) throw new Error('setup failed');
-      container.taskService.createTask({
-        name: 'Child',
-        type: 'story',
-        parentId: epic.value.id,
-      });
+      container.taskService.createTask(
+        {
+          name: 'Child',
+          type: 'story',
+          parentId: epic.value.id,
+        },
+        project,
+      );
 
       const result = container.taskService.updateTask(epic.value.id, { type: 'story' });
       expect(result.ok).toBe(false);
@@ -919,7 +1012,7 @@ describe('TaskService', () => {
     });
 
     it('allows changing epic to story when it has no children', () => {
-      const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' });
+      const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' }, project);
       if (!epic.ok) throw new Error('setup failed');
 
       const result = container.taskService.updateTask(epic.value.id, { type: 'story' });
@@ -929,13 +1022,16 @@ describe('TaskService', () => {
     });
 
     it('rejects changing to epic when task has a parent', () => {
-      const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' });
+      const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' }, project);
       if (!epic.ok) throw new Error('setup failed');
-      const story = container.taskService.createTask({
-        name: 'Story',
-        type: 'story',
-        parentId: epic.value.id,
-      });
+      const story = container.taskService.createTask(
+        {
+          name: 'Story',
+          type: 'story',
+          parentId: epic.value.id,
+        },
+        project,
+      );
       if (!story.ok) throw new Error('setup failed');
 
       const result = container.taskService.updateTask(story.value.id, { type: 'epic' });
@@ -946,10 +1042,10 @@ describe('TaskService', () => {
     });
 
     it('ranks epics separately from stories', () => {
-      const e1 = container.taskService.createTask({ name: 'Epic 1', type: 'epic' });
-      const s1 = container.taskService.createTask({ name: 'Story 1', type: 'story' });
-      const e2 = container.taskService.createTask({ name: 'Epic 2', type: 'epic' });
-      const s2 = container.taskService.createTask({ name: 'Story 2', type: 'story' });
+      const e1 = container.taskService.createTask({ name: 'Epic 1', type: 'epic' }, project);
+      const s1 = container.taskService.createTask({ name: 'Story 1', type: 'story' }, project);
+      const e2 = container.taskService.createTask({ name: 'Epic 2', type: 'epic' }, project);
+      const s2 = container.taskService.createTask({ name: 'Story 2', type: 'story' }, project);
       if (!e1.ok || !s1.ok || !e2.ok || !s2.ok) throw new Error('setup failed');
 
       // Epics should be ranked independently of stories
@@ -958,19 +1054,19 @@ describe('TaskService', () => {
     });
 
     it('lists tasks filtered by level', () => {
-      container.taskService.createTask({ name: 'Epic', type: 'epic' });
-      container.taskService.createTask({ name: 'Story', type: 'story' });
-      container.taskService.createTask({ name: 'Bug', type: 'bug' });
+      container.taskService.createTask({ name: 'Epic', type: 'epic' }, project);
+      container.taskService.createTask({ name: 'Story', type: 'story' }, project);
+      container.taskService.createTask({ name: 'Bug', type: 'bug' }, project);
 
       // Level 1 = epics only
-      const epics = container.taskService.listTasks({ level: 1 });
+      const epics = container.taskService.listTasks(project, { level: 1 });
       expect(epics.ok).toBe(true);
       if (!epics.ok) return;
       expect(epics.value).toHaveLength(1);
       expect(epics.value[0]?.type).toBe('epic');
 
       // Level 2 = stories, tech-debt, bugs
-      const work = container.taskService.listTasks({ level: 2 });
+      const work = container.taskService.listTasks(project, { level: 2 });
       expect(work.ok).toBe(true);
       if (!work.ok) return;
       expect(work.value).toHaveLength(2);
@@ -978,15 +1074,15 @@ describe('TaskService', () => {
     });
 
     it('lists tasks filtered by parentIds (multi-select)', () => {
-      const e1 = container.taskService.createTask({ name: 'Epic 1', type: 'epic' });
-      const e2 = container.taskService.createTask({ name: 'Epic 2', type: 'epic' });
+      const e1 = container.taskService.createTask({ name: 'Epic 1', type: 'epic' }, project);
+      const e2 = container.taskService.createTask({ name: 'Epic 2', type: 'epic' }, project);
       if (!e1.ok || !e2.ok) throw new Error('setup failed');
 
-      container.taskService.createTask({ name: 'S1', parentId: e1.value.id });
-      container.taskService.createTask({ name: 'S2', parentId: e2.value.id });
-      container.taskService.createTask({ name: 'S3' }); // no parent
+      container.taskService.createTask({ name: 'S1', parentId: e1.value.id }, project);
+      container.taskService.createTask({ name: 'S2', parentId: e2.value.id }, project);
+      container.taskService.createTask({ name: 'S3' }, project); // no parent
 
-      const result = container.taskService.listTasks({
+      const result = container.taskService.listTasks(project, {
         parentIds: [e1.value.id, e2.value.id],
       });
       expect(result.ok).toBe(true);
@@ -996,7 +1092,7 @@ describe('TaskService', () => {
     });
 
     it('breakdown rejects non-epic parent', () => {
-      const story = container.taskService.createTask({ name: 'Story', type: 'story' });
+      const story = container.taskService.createTask({ name: 'Story', type: 'story' }, project);
       if (!story.ok) throw new Error('setup failed');
 
       const result = container.taskService.breakdownTask(story.value.id, [
@@ -1008,7 +1104,7 @@ describe('TaskService', () => {
     });
 
     it('breakdown rejects epic subtask', () => {
-      const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' });
+      const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' }, project);
       if (!epic.ok) throw new Error('setup failed');
 
       const result = container.taskService.breakdownTask(epic.value.id, [
@@ -1020,7 +1116,7 @@ describe('TaskService', () => {
     });
 
     it('breakdown succeeds with epic parent and work subtasks', () => {
-      const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' });
+      const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' }, project);
       if (!epic.ok) throw new Error('setup failed');
 
       const result = container.taskService.breakdownTask(epic.value.id, [
@@ -1034,21 +1130,21 @@ describe('TaskService', () => {
     });
 
     it('rejects reranking epic with --after pointing to a story', () => {
-      const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' });
-      const story = container.taskService.createTask({ name: 'Story', type: 'story' });
+      const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' }, project);
+      const story = container.taskService.createTask({ name: 'Story', type: 'story' }, project);
       if (!epic.ok || !story.ok) throw new Error('setup failed');
 
       // story is not in the epic-level ranked list, so it won't be found
-      const result = container.taskService.rerankTask({
-        taskId: epic.value.id,
-        afterId: story.value.id,
-      });
+      const result = container.taskService.rerankTask(
+        { taskId: epic.value.id, afterId: story.value.id },
+        project,
+      );
       expect(result.ok).toBe(false);
     });
 
     it('auto-reranks done epic to bottom of epic level', () => {
-      const e1 = container.taskService.createTask({ name: 'Epic 1', type: 'epic' });
-      const e2 = container.taskService.createTask({ name: 'Epic 2', type: 'epic' });
+      const e1 = container.taskService.createTask({ name: 'Epic 1', type: 'epic' }, project);
+      const e2 = container.taskService.createTask({ name: 'Epic 2', type: 'epic' }, project);
       if (!e1.ok || !e2.ok) throw new Error('setup failed');
 
       // Mark e1 as done
@@ -1060,8 +1156,8 @@ describe('TaskService', () => {
     });
 
     it('rejects setting parentId on epic via update', () => {
-      const e1 = container.taskService.createTask({ name: 'Epic 1', type: 'epic' });
-      const e2 = container.taskService.createTask({ name: 'Epic 2', type: 'epic' });
+      const e1 = container.taskService.createTask({ name: 'Epic 1', type: 'epic' }, project);
+      const e2 = container.taskService.createTask({ name: 'Epic 2', type: 'epic' }, project);
       if (!e1.ok || !e2.ok) throw new Error('setup failed');
 
       const result = container.taskService.updateTask(e1.value.id, {
@@ -1074,16 +1170,16 @@ describe('TaskService', () => {
 
     describe('auto-propagate parent status', () => {
       it('moves epic to in-progress when first child starts', () => {
-        const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' });
+        const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' }, project);
         if (!epic.ok) throw new Error('setup failed');
-        const s1 = container.taskService.createTask({
-          name: 'S1',
-          parentId: epic.value.id,
-        });
-        const s2 = container.taskService.createTask({
-          name: 'S2',
-          parentId: epic.value.id,
-        });
+        const s1 = container.taskService.createTask(
+          { name: 'S1', parentId: epic.value.id },
+          project,
+        );
+        const s2 = container.taskService.createTask(
+          { name: 'S2', parentId: epic.value.id },
+          project,
+        );
         if (!s1.ok || !s2.ok) throw new Error('setup failed');
 
         // Epic starts as backlog
@@ -1099,16 +1195,16 @@ describe('TaskService', () => {
       });
 
       it('does not demote epic when second child also starts', () => {
-        const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' });
+        const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' }, project);
         if (!epic.ok) throw new Error('setup failed');
-        const s1 = container.taskService.createTask({
-          name: 'S1',
-          parentId: epic.value.id,
-        });
-        const s2 = container.taskService.createTask({
-          name: 'S2',
-          parentId: epic.value.id,
-        });
+        const s1 = container.taskService.createTask(
+          { name: 'S1', parentId: epic.value.id },
+          project,
+        );
+        const s2 = container.taskService.createTask(
+          { name: 'S2', parentId: epic.value.id },
+          project,
+        );
         if (!s1.ok || !s2.ok) throw new Error('setup failed');
 
         container.taskService.updateTask(s1.value.id, { status: 'in-progress' });
@@ -1121,16 +1217,16 @@ describe('TaskService', () => {
       });
 
       it('moves epic to done when all children are terminal', () => {
-        const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' });
+        const epic = container.taskService.createTask({ name: 'Epic', type: 'epic' }, project);
         if (!epic.ok) throw new Error('setup failed');
-        const s1 = container.taskService.createTask({
-          name: 'S1',
-          parentId: epic.value.id,
-        });
-        const s2 = container.taskService.createTask({
-          name: 'S2',
-          parentId: epic.value.id,
-        });
+        const s1 = container.taskService.createTask(
+          { name: 'S1', parentId: epic.value.id },
+          project,
+        );
+        const s2 = container.taskService.createTask(
+          { name: 'S2', parentId: epic.value.id },
+          project,
+        );
         if (!s1.ok || !s2.ok) throw new Error('setup failed');
 
         container.taskService.updateTask(s1.value.id, { status: 'done' });
@@ -1149,7 +1245,7 @@ describe('TaskService', () => {
       });
 
       it('does not propagate for tasks without a parent', () => {
-        const s1 = container.taskService.createTask({ name: 'Orphan' });
+        const s1 = container.taskService.createTask({ name: 'Orphan' }, project);
         if (!s1.ok) throw new Error('setup failed');
         // Should not throw
         const result = container.taskService.updateTask(s1.value.id, { status: 'in-progress' });
@@ -1157,16 +1253,19 @@ describe('TaskService', () => {
       });
 
       it('moves epic from todo to in-progress on child start', () => {
-        const epic = container.taskService.createTask({
-          name: 'Epic',
-          type: 'epic',
-          status: 'todo',
-        });
+        const epic = container.taskService.createTask(
+          {
+            name: 'Epic',
+            type: 'epic',
+            status: 'todo',
+          },
+          project,
+        );
         if (!epic.ok) throw new Error('setup failed');
-        const s1 = container.taskService.createTask({
-          name: 'S1',
-          parentId: epic.value.id,
-        });
+        const s1 = container.taskService.createTask(
+          { name: 'S1', parentId: epic.value.id },
+          project,
+        );
         if (!s1.ok) throw new Error('setup failed');
 
         container.taskService.updateTask(s1.value.id, { status: 'in-progress' });

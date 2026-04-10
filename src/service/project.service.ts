@@ -15,8 +15,7 @@ export interface ProjectService {
   getProject(id: string): Result<Project>;
   updateProject(id: string, input: unknown): Result<Project>;
   deleteProject(id: string): Result<void>;
-  resolveProject(idOrName?: string): Result<Project>;
-  resolveProjectWithGit(idOrName?: string, cwd?: string): Result<Project>;
+  resolveProject(idOrName?: string, cwd?: string): Result<Project>;
   linkGitRemote(idOrName: string, remote?: string): Result<Project>;
   unlinkGitRemote(idOrName: string): Result<Project>;
   nextTaskId(project: Project): Result<string>;
@@ -97,7 +96,7 @@ export class ProjectServiceImpl implements ProjectService {
     return this.repo.delete(id);
   }
 
-  resolveProject(idOrName?: string): Result<Project> {
+  resolveProject(idOrName?: string, cwd?: string): Result<Project> {
     return logger.startSpan('ProjectService.resolveProject', () => {
       if (idOrName) {
         const byId = this.repo.findById(idOrName);
@@ -115,6 +114,17 @@ export class ProjectServiceImpl implements ProjectService {
         return err(new AppError('NOT_FOUND', `Project not found: ${idOrName}`));
       }
 
+      // Try git remote detection before falling back to default
+      const remoteResult = this.detectRemote(cwd);
+      if (remoteResult.ok && remoteResult.value) {
+        const byRemote = this.repo.findByGitRemote(remoteResult.value);
+        if (!byRemote.ok) return byRemote;
+        if (byRemote.value) {
+          logger.info(`resolveProject: matched git remote to project key=${byRemote.value.key}`);
+          return ok(byRemote.value);
+        }
+      }
+
       const defaultProject = this.repo.findDefault();
       if (!defaultProject.ok) return defaultProject;
       if (defaultProject.value) return ok(defaultProject.value);
@@ -125,31 +135,6 @@ export class ProjectServiceImpl implements ProjectService {
           'No project specified and no default project set. Create a project first.',
         ),
       );
-    });
-  }
-
-  resolveProjectWithGit(idOrName?: string, cwd?: string): Result<Project> {
-    return logger.startSpan('ProjectService.resolveProjectWithGit', () => {
-      // Explicit project name always wins
-      if (idOrName) {
-        return this.resolveProject(idOrName);
-      }
-
-      // Try git remote detection
-      const remoteResult = this.detectRemote(cwd);
-      if (remoteResult.ok && remoteResult.value) {
-        const byRemote = this.repo.findByGitRemote(remoteResult.value);
-        if (!byRemote.ok) return byRemote;
-        if (byRemote.value) {
-          logger.info(
-            `resolveProjectWithGit: matched git remote to project key=${byRemote.value.key}`,
-          );
-          return ok(byRemote.value);
-        }
-      }
-
-      // Fall through to default project
-      return this.resolveProject();
     });
   }
 

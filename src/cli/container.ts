@@ -31,11 +31,7 @@ export function createContainer(
   const projectService = new ProjectServiceImpl(projectRepo, detectGitRemote);
   const dependencyService = new DependencyServiceImpl(depRepo, taskRepo);
   const taskService = new TaskServiceImpl(taskRepo, projectService, () => dependencyService);
-  const portabilityService = new PortabilityServiceImpl(
-    taskService,
-    dependencyService,
-    projectService,
-  );
+  const portabilityService = new PortabilityServiceImpl(taskService, dependencyService);
 
   return { dbPath, projectService, taskService, dependencyService, portabilityService };
 }

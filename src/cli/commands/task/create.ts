@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import type { Container } from '../../container.js';
-import { handleResult } from '../../output.js';
+import { handleResult, printError } from '../../output.js';
+import { withProject } from '../../helpers/project.js';
 
 export function registerTaskCreate(parent: Command, container: Container): void {
   parent
@@ -27,6 +28,8 @@ export function registerTaskCreate(parent: Command, container: Container): void 
         additionalRequirements?: string;
         dependsOn?: string[];
       }) => {
+        const projectResult = withProject(container, opts.project);
+        if (!projectResult.ok) return printError(projectResult.error);
         const result = container.taskService.createTask(
           {
             name: opts.name,
@@ -38,7 +41,7 @@ export function registerTaskCreate(parent: Command, container: Container): void 
             additionalRequirements: opts.additionalRequirements,
             dependsOn: opts.dependsOn?.map((id) => ({ id })),
           },
-          opts.project,
+          projectResult.value,
         );
         handleResult(result);
       },

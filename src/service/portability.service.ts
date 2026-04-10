@@ -10,7 +10,7 @@ import type {
 import { ImportFileSchema } from '../types/portability.js';
 import type { TaskService } from './task.service.js';
 import type { DependencyService } from './dependency.service.js';
-import type { ProjectService } from './project.service.js';
+import type { Project } from '../types/project.js';
 import { AppError } from '../errors/app-error.js';
 import { logger } from '../logging/logger.js';
 
@@ -36,10 +36,10 @@ interface MappedDependency {
 // ── Service interface ─────────────────────────────────────────────────
 
 export interface PortabilityService {
-  exportTasks(projectIdOrName?: string): Result<ExportData>;
+  exportTasks(project: Project): Result<ExportData>;
   importTasks(
     fileData: unknown,
-    projectIdOrName?: string,
+    project: Project,
     fieldMapping?: FieldMapping,
   ): Result<ImportResult>;
 }
@@ -50,16 +50,11 @@ export class PortabilityServiceImpl implements PortabilityService {
   constructor(
     private readonly taskService: TaskService,
     private readonly depService: DependencyService,
-    private readonly projectService: ProjectService,
   ) {}
 
-  exportTasks(projectIdOrName?: string): Result<ExportData> {
+  exportTasks(project: Project): Result<ExportData> {
     return logger.startSpan('PortabilityService.exportTasks', () => {
-      const projectResult = this.projectService.resolveProject(projectIdOrName);
-      if (!projectResult.ok) return projectResult;
-      const project = projectResult.value;
-
-      const tasksResult = this.taskService.listTasks({ projectId: project.id });
+      const tasksResult = this.taskService.listTasks(project, {});
       if (!tasksResult.ok) return tasksResult;
       const tasks = tasksResult.value;
 
@@ -110,7 +105,7 @@ export class PortabilityServiceImpl implements PortabilityService {
 
   importTasks(
     fileData: unknown,
-    projectIdOrName?: string,
+    project: Project,
     fieldMapping?: FieldMapping,
   ): Result<ImportResult> {
     return logger.startSpan('PortabilityService.importTasks', () => {
@@ -160,7 +155,7 @@ export class PortabilityServiceImpl implements PortabilityService {
             technicalNotes: task.technicalNotes || undefined,
             additionalRequirements: task.additionalRequirements || undefined,
           },
-          projectIdOrName,
+          project,
         );
         if (!createResult.ok) return createResult;
 

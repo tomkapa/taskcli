@@ -3,10 +3,12 @@ import { DatabaseSync } from 'node:sqlite';
 import { createContainer } from '../../src/cli/container.js';
 import { runMigrations } from '../../src/db/migrator.js';
 import type { Container } from '../../src/cli/container.js';
+import type { Project } from '../../src/types/project.js';
 import type { ExportData } from '../../src/types/portability.js';
 import { parseFieldMapping } from '../../src/types/portability.js';
 
 let container: Container;
+let project: Project;
 
 beforeEach(() => {
   const db = new DatabaseSync(':memory:');
@@ -15,6 +17,9 @@ beforeEach(() => {
   runMigrations(db);
   container = createContainer(db);
   container.projectService.createProject({ name: 'TestProj', isDefault: true });
+  const p = container.projectService.resolveProject();
+  if (!p.ok) throw new Error('setup failed');
+  project = p.value;
 });
 
 // ── parseFieldMapping ─────────────────────────────────────────────────
@@ -45,10 +50,10 @@ describe('parseFieldMapping', () => {
 
 describe('PortabilityService.exportTasks', () => {
   it('exports tasks from a project', () => {
-    container.taskService.createTask({ name: 'Task A', type: 'story' });
-    container.taskService.createTask({ name: 'Task B', type: 'bug' });
+    container.taskService.createTask({ name: 'Task A', type: 'story' }, project);
+    container.taskService.createTask({ name: 'Task B', type: 'bug' }, project);
 
-    const result = container.portabilityService.exportTasks('TestProj');
+    const result = container.portabilityService.exportTasks(project);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -61,8 +66,8 @@ describe('PortabilityService.exportTasks', () => {
   });
 
   it('exports dependencies between project tasks', () => {
-    const t1 = container.taskService.createTask({ name: 'Foundation' });
-    const t2 = container.taskService.createTask({ name: 'Feature' });
+    const t1 = container.taskService.createTask({ name: 'Foundation' }, project);
+    const t2 = container.taskService.createTask({ name: 'Feature' }, project);
     if (!t1.ok || !t2.ok) throw new Error('setup failed');
 
     container.dependencyService.addDependency({
@@ -70,7 +75,7 @@ describe('PortabilityService.exportTasks', () => {
       dependsOnId: t1.value.id,
     });
 
-    const result = container.portabilityService.exportTasks('TestProj');
+    const result = container.portabilityService.exportTasks(project);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -80,12 +85,12 @@ describe('PortabilityService.exportTasks', () => {
   });
 
   it('includes parentId in exported tasks', () => {
-    const parent = container.taskService.createTask({ name: 'Parent', type: 'epic' });
+    const parent = container.taskService.createTask({ name: 'Parent', type: 'epic' }, project);
     if (!parent.ok) throw new Error('setup failed');
 
-    container.taskService.createTask({ name: 'Child', parentId: parent.value.id });
+    container.taskService.createTask({ name: 'Child', parentId: parent.value.id }, project);
 
-    const result = container.portabilityService.exportTasks('TestProj');
+    const result = container.portabilityService.exportTasks(project);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -93,8 +98,8 @@ describe('PortabilityService.exportTasks', () => {
     expect(child?.parentId).toBe(parent.value.id);
   });
 
-  it('returns error for non-existent project', () => {
-    const result = container.portabilityService.exportTasks('NonExistent');
+  it('resolveProject returns NOT_FOUND for non-existent project name', () => {
+    const result = container.projectService.resolveProject('NonExistent');
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('NOT_FOUND');
@@ -112,7 +117,7 @@ describe('PortabilityService.importTasks', () => {
       ],
     };
 
-    const result = container.portabilityService.importTasks(data, 'TestProj');
+    const result = container.portabilityService.importTasks(data, project);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -140,7 +145,7 @@ describe('PortabilityService.importTasks', () => {
       dependencies: [{ taskId: 'EXT-2', dependsOnId: 'EXT-1', type: 'blocks' }],
     };
 
-    const result = container.portabilityService.importTasks(data, 'TestProj');
+    const result = container.portabilityService.importTasks(data, project);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -169,7 +174,7 @@ describe('PortabilityService.importTasks', () => {
     };
 
     const fieldMapping = parseFieldMapping('key:id,title:name,summary:description,category:type');
-    const result = container.portabilityService.importTasks(data, 'TestProj', fieldMapping);
+    const result = container.portabilityService.importTasks(data, project, fieldMapping);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -194,7 +199,7 @@ describe('PortabilityService.importTasks', () => {
     };
 
     const fieldMapping = parseFieldMapping('key:id,title:name');
-    const result = container.portabilityService.importTasks(data, 'TestProj', fieldMapping);
+    const result = container.portabilityService.importTasks(data, project, fieldMapping);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -216,7 +221,7 @@ describe('PortabilityService.importTasks', () => {
       ],
     };
 
-    const result = container.portabilityService.importTasks(data, 'TestProj');
+    const result = container.portabilityService.importTasks(data, project);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -237,7 +242,7 @@ describe('PortabilityService.importTasks', () => {
       ],
     };
 
-    const result = container.portabilityService.importTasks(data, 'TestProj');
+    const result = container.portabilityService.importTasks(data, project);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -254,7 +259,7 @@ describe('PortabilityService.importTasks', () => {
       tasks: [{ name: 'No ID task' }],
     };
 
-    const result = container.portabilityService.importTasks(data, 'TestProj');
+    const result = container.portabilityService.importTasks(data, project);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('VALIDATION');
@@ -266,7 +271,7 @@ describe('PortabilityService.importTasks', () => {
       tasks: [{ id: 'X-1' }],
     };
 
-    const result = container.portabilityService.importTasks(data, 'TestProj');
+    const result = container.portabilityService.importTasks(data, project);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('VALIDATION');
@@ -279,7 +284,7 @@ describe('PortabilityService.importTasks', () => {
       dependencies: [{ taskId: 'X-1' }],
     };
 
-    const result = container.portabilityService.importTasks(data, 'TestProj');
+    const result = container.portabilityService.importTasks(data, project);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('VALIDATION');
@@ -289,7 +294,7 @@ describe('PortabilityService.importTasks', () => {
   it('rejects empty tasks array', () => {
     const data = { tasks: [] };
 
-    const result = container.portabilityService.importTasks(data, 'TestProj');
+    const result = container.portabilityService.importTasks(data, project);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('VALIDATION');
@@ -301,12 +306,14 @@ describe('PortabilityService.importTasks', () => {
 describe('Export → Import round-trip', () => {
   it('round-trips tasks and dependencies through export then import', () => {
     // Create source data in TestProj
-    const t1 = container.taskService.createTask({ name: 'Alpha', type: 'story', status: 'todo' });
-    const t2 = container.taskService.createTask({
-      name: 'Beta',
-      type: 'bug',
-      description: 'Fix it',
-    });
+    const t1 = container.taskService.createTask(
+      { name: 'Alpha', type: 'story', status: 'todo' },
+      project,
+    );
+    const t2 = container.taskService.createTask(
+      { name: 'Beta', type: 'bug', description: 'Fix it' },
+      project,
+    );
     if (!t1.ok || !t2.ok) throw new Error('setup failed');
 
     container.dependencyService.addDependency({
@@ -315,17 +322,20 @@ describe('Export → Import round-trip', () => {
     });
 
     // Export
-    const exportResult = container.portabilityService.exportTasks('TestProj');
+    const exportResult = container.portabilityService.exportTasks(project);
     expect(exportResult.ok).toBe(true);
     if (!exportResult.ok) return;
 
     // Create a second project for import target
     container.projectService.createProject({ name: 'ImportTarget' });
+    const importTargetResult = container.projectService.resolveProject('ImportTarget');
+    if (!importTargetResult.ok) throw new Error('setup failed');
+    const importTarget = importTargetResult.value;
 
     // Import the exported data into another project
     const importResult = container.portabilityService.importTasks(
       exportResult.value as unknown,
-      'ImportTarget',
+      importTarget,
     );
     expect(importResult.ok).toBe(true);
     if (!importResult.ok) return;
