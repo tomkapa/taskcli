@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-04-10
+
+### Changed
+- Redesign TUI color theme around #9B9BA5 (logo helmet grey) for consistent palette
+- Redesign header with 3-column layout: logo, product info, and shortcut hints
+- Integrate Tayto pixel logo into TUI header bar
+
+### Improved
+- Consolidate logo assets into `src/tui/assets/` and `src/tui/components/Logo.tsx`
+- Theme colors now import from logo PALETTE for single source of truth
+- Memoize Logo component to avoid unnecessary re-renders
+
+### Removed
+- Standalone `tayto-logo/` directory (AGENT.md, preview PNGs)
+
 ## [0.4.1] - 2026-04-10
 
 ### Fixed
@@ -47,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Project management with default project support
 - Zod validation across all service layer inputs
 
-[Unreleased]: https://github.com/tomkapa/tayto/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/tomkapa/tayto/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/tomkapa/tayto/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/tomkapa/tayto/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/tomkapa/tayto/compare/v0.3.0...v0.4.0

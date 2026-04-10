@@ -509,6 +509,7 @@ describe('TUI Component Rendering', () => {
       const state = { ...initialState, activeProject: mockProject, tasks: [mockTask] };
       const { lastFrame } = render(<Header state={state} />);
       const frame = lastFrame() ?? '';
+      expect(frame).toContain('tayto');
       expect(frame).toContain('My App');
       expect(frame).toContain('Project:');
     });

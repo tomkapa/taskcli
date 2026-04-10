@@ -1,83 +1,78 @@
-// k9s-inspired color theme
+import { PALETTE } from './assets/logo-data.js';
+
+// Color theme derived from the Tayto logo palette.
+// Primary chrome: PALETTE.grey (#9B9BA5)
+// Accent: PALETTE.red (#C82D28)
+// Warm: PALETTE.skin (#D7A578)
+// Muted: PALETTE.greyDark (#73737D)
 export const theme = {
-  // Body
-  fg: '#1E90FF', // dodgerblue
+  fg: PALETTE.grey,
   bg: 'black',
-  logo: '#FFA500', // orange
+  logo: PALETTE.red,
 
-  // Table
   table: {
-    fg: '#00FFFF', // aqua
+    fg: '#C4C4CF',
     cursorFg: 'black',
-    cursorBg: '#00FFFF', // aqua
-    headerFg: 'white',
-    markColor: '#98FB98', // palegreen
-    depHighlightBg: '#1A5276', // dark steel blue – non-terminal dep rows
-    blockedCursorBg: '#C0392B', // strong red – selected row blocked by non-terminal dep
+    cursorBg: PALETTE.grey,
+    headerFg: '#D5D5DF',
+    markColor: PALETTE.skin,
+    depHighlightBg: PALETTE.blueDark,
+    blockedCursorBg: PALETTE.redDark,
   },
 
-  // Status colors (row-level)
   status: {
-    new: '#87CEFA', // lightskyblue
-    modified: '#ADFF2F', // greenyellow
-    added: '#1E90FF', // dodgerblue
-    error: '#FF4500', // orangered
-    pending: '#FF8C00', // darkorange
-    highlight: '#00FFFF', // aqua
-    kill: '#9370DB', // mediumpurple
-    completed: '#778899', // lightslategray
+    new: '#87CEFA',
+    modified: '#C4C4CF',
+    added: '#4682B4',
+    error: PALETTE.red,
+    pending: PALETTE.skin,
+    highlight: PALETTE.grey,
+    kill: '#5A5A64',
+    completed: PALETTE.greyDark,
   },
 
-  // Frame / borders
-  border: '#1E90FF', // dodgerblue
-  borderFocus: '#00FFFF', // aqua
+  border: '#5A5A64',
+  borderFocus: PALETTE.grey,
 
-  // Title
-  title: '#00FFFF', // aqua
-  titleHighlight: '#FF00FF', // fuchsia
-  titleCounter: '#FFEFD5', // papayawhip
-  titleFilter: '#2E8B57', // seagreen
+  title: PALETTE.grey,
+  titleHighlight: PALETTE.red,
+  titleCounter: PALETTE.skin,
+  titleFilter: PALETTE.greyDark,
 
-  // Prompt
-  prompt: '#5F9EA0', // cadetblue
-  promptSuggest: '#1E90FF', // dodgerblue
+  prompt: PALETTE.greyDark,
+  promptSuggest: PALETTE.grey,
 
-  // Dialog
   dialog: {
-    fg: '#1E90FF', // dodgerblue
+    fg: PALETTE.grey,
     buttonFg: 'black',
-    buttonBg: '#1E90FF',
+    buttonBg: PALETTE.grey,
     buttonFocusFg: 'white',
-    buttonFocusBg: '#FF00FF', // fuchsia
-    label: '#FF00FF', // fuchsia
-    field: '#1E90FF',
+    buttonFocusBg: PALETTE.red,
+    label: PALETTE.red,
+    field: PALETTE.grey,
   },
 
-  // Detail/YAML
   yaml: {
-    key: '#4682B4', // steelblue
-    colon: 'white',
-    value: '#FFEFD5', // papayawhip
+    key: PALETTE.greyDark,
+    colon: PALETTE.grey,
+    value: '#D5D5DF',
   },
 
-  // Crumbs
   crumb: {
     fg: 'black',
-    bg: '#4682B4', // steelblue
-    activeBg: '#FFA500', // orange
+    bg: '#5A5A64',
+    activeBg: PALETTE.grey,
   },
 
-  // Flash
   flash: {
-    info: '#FFDEAD', // navajowhite
-    warn: '#FFA500', // orange
-    error: '#FF4500', // orangered
+    info: '#C4C4CF',
+    warn: PALETTE.skin,
+    error: PALETTE.red,
   },
 
-  // Menu / key hints
   menu: {
-    key: '#1E90FF', // dodgerblue
-    numKey: '#FF00FF', // fuchsia
-    desc: 'white',
+    key: PALETTE.grey,
+    numKey: PALETTE.red,
+    desc: PALETTE.greyDark,
   },
 } as const;
