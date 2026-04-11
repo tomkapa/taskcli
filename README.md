@@ -29,9 +29,7 @@ npm install -g @tomkapa/tayto
 
 ## Demo
 
-<!-- TODO: Replace with recorded TUI demo video -->
-
-> Video coming soon.
+<video src="https://github.com/tomkapa/tayto/releases/download/v0.1.0-demo/demo.mp4" controls width="100%"></video>
 
 ---
 
