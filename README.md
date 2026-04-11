@@ -17,6 +17,21 @@ CLI for agents. TUI for humans. One SQLite database. Zero configuration.
 
 ---
 
+## Why Tayto
+
+Every project management tool out there assumes you're on a team. They want you to configure sprints, assign story points, set due dates, and fill out fifteen fields before you can track a single task.
+
+If you're a solo dev shipping with AI agents like Claude Code, you need something different:
+
+- **You forget things.** A quick idea during a coding session, a tech debt note from an AI-generated feature, a bug you noticed but can't fix right now. Without a fast capture tool, these vanish.
+- **AI generates work faster than you can track it.** Your agent builds five features in an afternoon. Each one leaves behind edge cases, missing tests, and shortcuts. That debt is invisible until it bites you.
+- **Priority fields are a lie.** When you're the only one executing, all that matters is order: what's first, what's next. Row 1 in the task list is what you do now. That's it.
+- **Your AI agent can't use Jira.** It needs a CLI that speaks JSON. Your existing tools weren't built for this.
+
+Tayto solves exactly this: a **CLI for agents** and a **TUI for humans**, sharing the same local SQLite database. No server. No login. No internet required.
+
+---
+
 ## Install
 
 ```bash
