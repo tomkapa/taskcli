@@ -152,9 +152,10 @@ function chunkHints(hints: KeyHint[], cols: number): KeyHint[][] {
 
 interface Props {
   state: AppState;
+  latestVersion?: string | undefined;
 }
 
-export function Header({ state }: Props) {
+export function Header({ state, latestVersion }: Props) {
   const projectName = state.activeProject?.name ?? 'none';
   const taskCount = state.tasks.length;
   const hints = getKeyHints(state);
@@ -184,6 +185,12 @@ export function Header({ state }: Props) {
             {taskCount}
           </Text>
         </Box>
+        {latestVersion && (
+          <Box gap={1}>
+            <Text color={theme.flash.warn}>Update {latestVersion}</Text>
+            <Text color={theme.fg}>— tayto upgrade</Text>
+          </Box>
+        )}
       </Box>
 
       <Box flexGrow={1} justifyContent="flex-end">

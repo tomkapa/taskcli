@@ -36,6 +36,7 @@ import { useAutoRefetch } from '../useAutoRefetch.js';
 interface Props {
   container: Container;
   initialProject?: string | undefined;
+  latestVersion?: string | undefined;
 }
 
 const STATUS_CYCLE: TaskStatus[] = [
@@ -48,7 +49,7 @@ const STATUS_CYCLE: TaskStatus[] = [
 
 const EPIC_PANEL_WIDTH = 48;
 
-export function App({ container, initialProject }: Props) {
+export function App({ container, initialProject, latestVersion }: Props) {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const [state, dispatch] = useReducer(appReducer, initialState);
@@ -1097,7 +1098,7 @@ export function App({ container, initialProject }: Props) {
   return (
     <Box flexDirection="column" height={stdout.rows}>
       {/* Header: app info + key hints + logo */}
-      <Header state={state} />
+      <Header state={state} latestVersion={latestVersion} />
 
       {/* Content area */}
       <Box flexDirection="column" flexGrow={1} overflowY="hidden">

@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import type { Container } from './container.js';
+import { APP_VERSION } from '../version.js';
 import { registerProjectCreate } from './commands/project/create.js';
 import { registerProjectList } from './commands/project/list.js';
 import { registerProjectUpdate } from './commands/project/update.js';
@@ -21,13 +22,14 @@ import { registerDepAdd } from './commands/dep/add.js';
 import { registerDepRemove } from './commands/dep/remove.js';
 import { registerDepList } from './commands/dep/list.js';
 import { registerDepGraph } from './commands/dep/graph.js';
+import { registerUpgrade } from './commands/upgrade.js';
 
 export function buildCLI(container: Container): Command {
   const program = new Command();
   program
     .name('tayto')
     .description('CLI task management for solo devs and AI agents')
-    .version('0.1.0');
+    .version(APP_VERSION);
 
   const project = program.command('project').description('Manage projects');
   registerProjectCreate(project, container);
@@ -55,6 +57,8 @@ export function buildCLI(container: Container): Command {
   registerDepRemove(dep, container);
   registerDepList(dep, container);
   registerDepGraph(dep, container);
+
+  registerUpgrade(program, container);
 
   program
     .command('tui')

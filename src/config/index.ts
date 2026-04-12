@@ -7,6 +7,8 @@ export interface Config {
   logDir: string;
   logLevel: string;
   otelEndpoint: string | undefined;
+  updateCachePath: string;
+  noUpdateCheck: boolean;
 }
 
 function ensureDir(dir: string): void {
@@ -25,5 +27,7 @@ export function loadConfig(): Config {
     logDir,
     logLevel: process.env['TASK_LOG_LEVEL'] ?? 'info',
     otelEndpoint: process.env['OTEL_EXPORTER_OTLP_ENDPOINT'],
+    updateCachePath: join(dataDir, 'update-check.json'),
+    noUpdateCheck: process.env['TAYTO_NO_UPDATE_CHECK'] === '1',
   };
 }
