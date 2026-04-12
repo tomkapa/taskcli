@@ -494,13 +494,14 @@ export function App({ container, initialProject }: Props) {
       return;
     }
 
-    // Tab: cycle panel focus (epic -> list -> detail -> epic)
+    // Tab / Shift+Tab: cycle panel focus forward or backward
     if (key.tab && state.activeView === ViewType.TaskList) {
       const panels: Array<'epic' | 'list' | 'detail'> = previewTask
         ? ['epic', 'list', 'detail']
         : ['epic', 'list'];
       const curIdx = panels.indexOf(state.focusedPanel);
-      const nextPanel = panels[(curIdx + 1) % panels.length] ?? 'list';
+      const delta = key.shift ? -1 : 1;
+      const nextPanel = panels[(curIdx + delta + panels.length) % panels.length] ?? 'list';
       dispatch({ type: 'SET_PANEL_FOCUS', panel: nextPanel });
       return;
     }

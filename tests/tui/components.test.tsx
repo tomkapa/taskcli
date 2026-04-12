@@ -514,11 +514,88 @@ describe('TUI Component Rendering', () => {
       expect(frame).toContain('Project:');
     });
 
-    it('renders key hints', () => {
+    it('renders key hints for task list', () => {
       const { lastFrame } = render(<Header state={initialState} />);
       const frame = lastFrame() ?? '';
       expect(frame).toContain('create');
       expect(frame).toContain('help');
+    });
+
+    it('renders reorder hints when reordering', () => {
+      const state = { ...initialState, isReordering: true };
+      const { lastFrame } = render(<Header state={state} />);
+      const frame = lastFrame() ?? '';
+      expect(frame).toContain('move');
+      expect(frame).toContain('save');
+      expect(frame).toContain('cancel');
+    });
+
+    it('renders epic reorder hints when epic reordering', () => {
+      const state = { ...initialState, isEpicReordering: true };
+      const { lastFrame } = render(<Header state={state} />);
+      const frame = lastFrame() ?? '';
+      expect(frame).toContain('move epic');
+      expect(frame).toContain('save');
+      expect(frame).toContain('cancel');
+    });
+
+    it('renders dep-adding hints when adding dep', () => {
+      const state = { ...initialState, isAddingDep: true };
+      const { lastFrame } = render(<Header state={state} />);
+      const frame = lastFrame() ?? '';
+      expect(frame).toContain('search');
+      expect(frame).toContain('confirm');
+      expect(frame).toContain('cancel');
+    });
+
+    it('renders search hints when search is active', () => {
+      const state = { ...initialState, isSearchActive: true };
+      const { lastFrame } = render(<Header state={state} />);
+      const frame = lastFrame() ?? '';
+      expect(frame).toContain('query');
+      expect(frame).toContain('apply');
+      expect(frame).toContain('cancel');
+    });
+
+    it('renders detail panel hints when detail panel is focused', () => {
+      const state = { ...initialState, focusedPanel: 'detail' as const };
+      const { lastFrame } = render(<Header state={state} />);
+      const frame = lastFrame() ?? '';
+      expect(frame).toContain('scroll');
+      expect(frame).toContain('mermaid');
+    });
+
+    it('renders dep list hints on dependency-list view', () => {
+      const state = { ...initialState, activeView: ViewType.DependencyList };
+      const { lastFrame } = render(<Header state={state} />);
+      const frame = lastFrame() ?? '';
+      expect(frame).toContain('add blocker');
+      expect(frame).toContain('remove');
+      expect(frame).toContain('goto task');
+    });
+
+    it('renders form hints on task create view', () => {
+      const state = { ...initialState, activeView: ViewType.TaskCreate };
+      const { lastFrame } = render(<Header state={state} />);
+      const frame = lastFrame() ?? '';
+      expect(frame).toContain('next field');
+      expect(frame).toContain('save');
+      expect(frame).toContain('cancel');
+    });
+
+    it('renders project selector hints', () => {
+      const state = { ...initialState, activeView: ViewType.ProjectSelector };
+      const { lastFrame } = render(<Header state={state} />);
+      const frame = lastFrame() ?? '';
+      expect(frame).toContain('select');
+      expect(frame).toContain('create');
+      expect(frame).toContain('link');
+    });
+
+    it('shows shift+tab panel hint on task list', () => {
+      const { lastFrame } = render(<Header state={initialState} />);
+      const frame = lastFrame() ?? '';
+      expect(frame).toContain('S-tab');
     });
   });
 
@@ -564,8 +641,33 @@ describe('TUI Component Rendering', () => {
       expect(frame).toContain('ACTIONS');
       expect(frame).toContain('REORDER');
       expect(frame).toContain('FILTER');
+      expect(frame).toContain('EPIC PANEL');
+      expect(frame).toContain('DEPS VIEW');
+      expect(frame).toContain('FORMS');
       expect(frame).toContain('GENERAL');
       expect(frame).toContain('Press any key to close');
+    });
+
+    it('includes assign/unassign and deps actions', () => {
+      const { lastFrame } = render(<HelpOverlay />);
+      const frame = lastFrame() ?? '';
+      expect(frame).toContain('Assign/unassign');
+      expect(frame).toContain('Dependencies');
+      expect(frame).toContain('Mermaid');
+    });
+
+    it('includes form shortcuts', () => {
+      const { lastFrame } = render(<HelpOverlay />);
+      const frame = lastFrame() ?? '';
+      expect(frame).toContain('ctrl+s');
+      expect(frame).toContain('Open editor');
+    });
+
+    it('includes epic panel shortcuts', () => {
+      const { lastFrame } = render(<HelpOverlay />);
+      const frame = lastFrame() ?? '';
+      expect(frame).toContain('Toggle filter');
+      expect(frame).toContain('Reorder epics');
     });
   });
 

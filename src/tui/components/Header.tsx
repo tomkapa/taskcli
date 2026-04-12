@@ -1,5 +1,6 @@
 import { Box, Text } from 'ink';
 import type { AppState } from '../types.js';
+import { ViewType } from '../types.js';
 import { theme } from '../theme.js';
 import { Logo } from './Logo.js';
 
@@ -8,55 +9,130 @@ interface KeyHint {
   desc: string;
 }
 
-function getKeyHints(view: string, isSearchActive: boolean, focusedPanel: string): KeyHint[] {
+function getKeyHints(state: AppState): KeyHint[] {
+  const { activeView, isSearchActive, isReordering, isEpicReordering, isAddingDep, focusedPanel } =
+    state;
+
+  if (isAddingDep) {
+    return [
+      { key: 'type', desc: 'search' },
+      { key: 'enter', desc: 'confirm' },
+      { key: 'esc', desc: 'cancel' },
+    ];
+  }
+
+  const REORDER_SUFFIX: KeyHint[] = [
+    { key: '→', desc: 'save' },
+    { key: 't', desc: 'top' },
+    { key: 'b', desc: 'bottom' },
+    { key: 'esc/←', desc: 'cancel' },
+  ];
+
+  if (isReordering) return [{ key: '↑/↓', desc: 'move' }, ...REORDER_SUFFIX];
+  if (isEpicReordering) return [{ key: '↑/↓', desc: 'move epic' }, ...REORDER_SUFFIX];
+
   if (isSearchActive) {
     return [
+      { key: 'type', desc: 'query' },
       { key: 'enter', desc: 'apply' },
       { key: 'esc', desc: 'cancel' },
     ];
   }
-  if (view === 'task-list' && focusedPanel === 'epic') {
+
+  if (activeView === ViewType.TaskList && focusedPanel === 'epic') {
     return [
       { key: 'j/k', desc: 'nav' },
       { key: 'space', desc: 'toggle' },
-      { key: '\u2190', desc: 'reorder' },
       { key: '0', desc: 'clear' },
-      { key: 'tab', desc: 'tasks' },
+      { key: '←', desc: 'reorder' },
+      { key: 'tab/S-tab', desc: 'panel' },
       { key: '?', desc: 'help' },
       { key: 'q', desc: 'quit' },
     ];
   }
-  if (view === 'task-list') {
+
+  if (activeView === ViewType.TaskList && focusedPanel === 'detail') {
+    return [
+      { key: 'j/k', desc: 'scroll' },
+      { key: 'e', desc: 'edit' },
+      { key: 's', desc: 'status' },
+      { key: 'd', desc: 'del' },
+      { key: 'm', desc: 'mermaid' },
+      { key: 'D', desc: 'deps' },
+      { key: 'tab/S-tab', desc: 'panel' },
+      { key: '?', desc: 'help' },
+    ];
+  }
+
+  if (activeView === ViewType.TaskList) {
     return [
       { key: 'enter', desc: 'view' },
       { key: 'c', desc: 'create' },
       { key: 'e', desc: 'edit' },
       { key: 'd', desc: 'del' },
       { key: 's', desc: 'status' },
-      { key: 'a', desc: 'assign' },
-      { key: 'A', desc: 'unassign' },
-      { key: '\u2190', desc: 'reorder' },
+      { key: 'a/A', desc: 'assign' },
+      { key: '←', desc: 'reorder' },
       { key: '/', desc: 'search' },
       { key: 'p', desc: 'project' },
-      { key: 'f', desc: 'status-f' },
-      { key: 't', desc: 'type-f' },
+      { key: 'f/t', desc: 'filter' },
       { key: 'PgDn/Up', desc: 'page' },
-      { key: 'tab', desc: 'panel' },
+      { key: 'tab/S-tab', desc: 'panel' },
       { key: '?', desc: 'help' },
       { key: 'q', desc: 'quit' },
     ];
   }
-  if (view === 'task-detail') {
+
+  if (activeView === ViewType.TaskDetail) {
     return [
       { key: 'e', desc: 'edit' },
       { key: 's', desc: 'status' },
       { key: 'd', desc: 'del' },
       { key: 'm', desc: 'mermaid' },
+      { key: 'D', desc: 'deps' },
+      { key: 'j/k', desc: 'scroll' },
       { key: 'esc', desc: 'back' },
       { key: '?', desc: 'help' },
-      { key: 'q', desc: 'quit' },
     ];
   }
+
+  if (activeView === ViewType.DependencyList) {
+    return [
+      { key: 'a', desc: 'add blocker' },
+      { key: 'x', desc: 'remove' },
+      { key: 'enter', desc: 'goto task' },
+      { key: 'esc', desc: 'back' },
+      { key: '?', desc: 'help' },
+    ];
+  }
+
+  if (activeView === ViewType.TaskCreate || activeView === ViewType.TaskEdit) {
+    return [
+      { key: 'tab', desc: 'next field' },
+      { key: 'ctrl+s', desc: 'save' },
+      { key: 'esc', desc: 'cancel' },
+    ];
+  }
+
+  if (activeView === ViewType.ProjectSelector) {
+    return [
+      { key: 'j/k', desc: 'nav' },
+      { key: 'enter', desc: 'select' },
+      { key: 'c', desc: 'create' },
+      { key: 'l', desc: 'link' },
+      { key: 'd', desc: 'default' },
+      { key: 'esc', desc: 'back' },
+    ];
+  }
+
+  if (activeView === ViewType.EpicPicker) {
+    return [
+      { key: 'j/k', desc: 'nav' },
+      { key: 'enter', desc: 'select' },
+      { key: 'esc', desc: 'cancel' },
+    ];
+  }
+
   return [
     { key: 'esc', desc: 'back' },
     { key: '?', desc: 'help' },
@@ -81,7 +157,7 @@ interface Props {
 export function Header({ state }: Props) {
   const projectName = state.activeProject?.name ?? 'none';
   const taskCount = state.tasks.length;
-  const hints = getKeyHints(state.activeView, state.isSearchActive, state.focusedPanel);
+  const hints = getKeyHints(state);
 
   const hintCols = hints.length <= 7 ? 2 : hints.length <= 12 ? 3 : 4;
   const columns = chunkHints(hints, hintCols);
@@ -113,7 +189,7 @@ export function Header({ state }: Props) {
       <Box flexGrow={1} justifyContent="flex-end">
         <Box flexDirection="row" gap={2}>
           {columns.map((col, ci) => (
-            <Box key={ci} flexDirection="column">
+            <Box key={col[0]?.key ?? String(ci)} flexDirection="column">
               {col.map((h) => (
                 <Box key={h.key}>
                   <Text color={theme.menu.key} bold>
