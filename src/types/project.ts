@@ -1,4 +1,12 @@
 import { z } from 'zod/v4';
+import { GitRemote } from './git-remote.js';
+
+const gitRemoteField = z
+  .string()
+  .min(1, 'Git remote URL must not be empty')
+  .transform((v) => GitRemote.parse(v))
+  .nullable()
+  .optional();
 
 export const CreateProjectSchema = z.object({
   name: z.string().min(1, 'Project name is required').max(255),
@@ -11,7 +19,7 @@ export const CreateProjectSchema = z.object({
     .optional(),
   description: z.string().max(5000).optional(),
   isDefault: z.boolean().optional(),
-  gitRemote: z.string().min(1, 'Git remote URL must not be empty').nullable().optional(),
+  gitRemote: gitRemoteField,
 });
 export type CreateProjectInput = z.infer<typeof CreateProjectSchema>;
 
@@ -19,7 +27,7 @@ export const UpdateProjectSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   description: z.string().max(5000).optional(),
   isDefault: z.boolean().optional(),
-  gitRemote: z.string().min(1, 'Git remote URL must not be empty').nullable().optional(),
+  gitRemote: gitRemoteField,
 });
 export type UpdateProjectInput = z.infer<typeof UpdateProjectSchema>;
 
@@ -29,7 +37,7 @@ export interface Project {
   name: string;
   description: string;
   isDefault: boolean;
-  gitRemote: string | null;
+  gitRemote: GitRemote | null;
   createdAt: string;
   updatedAt: string;
 }

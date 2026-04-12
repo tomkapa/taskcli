@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { Result } from '../types/common.js';
 import { ok, err } from '../types/common.js';
 import type { Project, CreateProjectInput, UpdateProjectInput } from '../types/project.js';
+import { GitRemote } from '../types/git-remote.js';
 import { AppError } from '../errors/app-error.js';
 import { ulid } from 'ulid';
 import { logger } from '../logging/logger.js';
@@ -26,7 +27,7 @@ function rowToProject(row: ProjectRow): Project {
     name: row.name,
     description: row.description,
     isDefault: row.is_default === 1,
-    gitRemote: row.git_remote,
+    gitRemote: row.git_remote ? GitRemote.parse(row.git_remote) : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -37,7 +38,7 @@ export interface ProjectRepository {
   findById(id: string): Result<Project | null>;
   findByKey(key: string): Result<Project | null>;
   findByName(name: string): Result<Project | null>;
-  findByGitRemote(remote: string): Result<Project | null>;
+  findByGitRemote(remote: GitRemote): Result<Project | null>;
   findDefault(): Result<Project | null>;
   findAll(): Result<Project[]>;
   update(id: string, input: UpdateProjectInput): Result<Project>;
@@ -69,7 +70,7 @@ export class SqliteProjectRepository implements ProjectRepository {
             input.name,
             input.description ?? '',
             input.isDefault ? 1 : 0,
-            input.gitRemote ?? null,
+            input.gitRemote?.value ?? null,
             now,
             now,
           );
@@ -87,7 +88,7 @@ export class SqliteProjectRepository implements ProjectRepository {
             return err(
               new AppError(
                 'DUPLICATE',
-                `Git remote already linked to another project: ${input.gitRemote}`,
+                `Git remote already linked to another project: ${input.gitRemote?.value}`,
                 e,
               ),
             );
@@ -132,11 +133,11 @@ export class SqliteProjectRepository implements ProjectRepository {
     }
   }
 
-  findByGitRemote(remote: string): Result<Project | null> {
+  findByGitRemote(remote: GitRemote): Result<Project | null> {
     try {
       const row = this.db
         .prepare(`SELECT * FROM projects WHERE git_remote = ? AND ${NOT_DELETED}`)
-        .get(remote) as ProjectRow | undefined;
+        .get(remote.value) as ProjectRow | undefined;
       return ok(row ? rowToProject(row) : null);
     } catch (e) {
       return err(new AppError('DB_ERROR', 'Failed to find project by git remote', e));
@@ -191,7 +192,7 @@ export class SqliteProjectRepository implements ProjectRepository {
             input.name ?? existing.name,
             input.description ?? existing.description,
             input.isDefault !== undefined ? (input.isDefault ? 1 : 0) : existing.is_default,
-            input.gitRemote !== undefined ? input.gitRemote : existing.git_remote,
+            input.gitRemote !== undefined ? (input.gitRemote?.value ?? null) : existing.git_remote,
             now,
             id,
           );

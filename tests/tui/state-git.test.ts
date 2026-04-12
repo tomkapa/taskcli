@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { appReducer, initialState } from '../../src/tui/state.js';
 import { ViewType } from '../../src/tui/types.js';
 import type { Project } from '../../src/types/project.js';
+import { GitRemote } from '../../src/types/git-remote.js';
 
 const mockProject: Project = {
   id: 'proj-1',
@@ -9,7 +10,7 @@ const mockProject: Project = {
   name: 'Test Project',
   description: '',
   isDefault: true,
-  gitRemote: 'git@github.com:org/repo.git',
+  gitRemote: GitRemote.parse('git@github.com:org/repo.git'),
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z',
 };

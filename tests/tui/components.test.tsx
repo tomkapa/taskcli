@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup } from 'ink-testing-library';
 import type { Task } from '../../src/types/task.js';
 import type { Project } from '../../src/types/project.js';
+import { GitRemote } from '../../src/types/git-remote.js';
 import { TaskList } from '../../src/tui/components/TaskList.js';
 import { TaskDetail } from '../../src/tui/components/TaskDetail.js';
 import { TaskForm } from '../../src/tui/components/TaskForm.js';
@@ -575,7 +576,7 @@ describe('TUI Component Rendering', () => {
       name: 'Edit Me',
       description: 'A description',
       isDefault: false,
-      gitRemote: 'https://github.com/test/edit.git',
+      gitRemote: GitRemote.parse('https://github.com/test/edit.git'),
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-01T00:00:00Z',
     };
@@ -595,7 +596,7 @@ describe('TUI Component Rendering', () => {
       expect(frame).toContain('Edit Me');
       expect(frame).toContain('EDT');
       expect(frame).toContain('A description');
-      expect(frame).toContain('https://github.com/test/edit.git');
+      expect(frame).toContain('github.com/test/edit');
     });
 
     it('shows read-only hint on key field when editing', async () => {
@@ -647,7 +648,7 @@ describe('TUI Component Rendering', () => {
           name: 'Updated Name',
           key: 'EDT',
           description: 'A description',
-          gitRemote: 'https://github.com/test/edit.git',
+          gitRemote: 'github.com/test/edit',
         }),
       );
     });

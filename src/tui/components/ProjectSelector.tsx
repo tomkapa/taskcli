@@ -114,7 +114,7 @@ export function ProjectSelector({
           const defaultMarker = project.isDefault ? 'D' : ' ';
           const marker = `${activeMarker}${defaultMarker}`;
 
-          const remoteDisplay = (project.gitRemote ?? '').slice(0, 38).padEnd(40);
+          const remoteDisplay = (project.gitRemote?.value ?? '').slice(0, 38).padEnd(40);
 
           if (isSelected) {
             return (

@@ -2,12 +2,13 @@ import type { Result } from '../types/common.js';
 import { ok, err } from '../types/common.js';
 import type { Project } from '../types/project.js';
 import { CreateProjectSchema, UpdateProjectSchema } from '../types/project.js';
+import { GitRemote } from '../types/git-remote.js';
 import type { ProjectRepository } from '../repository/project.repository.js';
 import { AppError } from '../errors/app-error.js';
 import { logger } from '../logging/logger.js';
 import { detectGitRemote as defaultDetectGitRemote } from '../utils/git.js';
 
-export type DetectGitRemoteFn = (cwd?: string) => Result<string | null>;
+export type DetectGitRemoteFn = (cwd?: string) => Result<GitRemote | null>;
 
 export interface ProjectService {
   createProject(input: unknown): Result<Project>;
@@ -143,8 +144,10 @@ export class ProjectServiceImpl implements ProjectService {
       const resolved = this.resolveProject(idOrName);
       if (!resolved.ok) return resolved;
 
-      let url = remote;
-      if (!url) {
+      let gitRemote: GitRemote;
+      if (remote) {
+        gitRemote = GitRemote.parse(remote);
+      } else {
         const detected = this.detectRemote();
         if (!detected.ok) return detected;
         if (!detected.value) {
@@ -155,10 +158,10 @@ export class ProjectServiceImpl implements ProjectService {
             ),
           );
         }
-        url = detected.value;
+        gitRemote = detected.value;
       }
 
-      return this.repo.update(resolved.value.id, { gitRemote: url });
+      return this.repo.update(resolved.value.id, { gitRemote });
     });
   }
 

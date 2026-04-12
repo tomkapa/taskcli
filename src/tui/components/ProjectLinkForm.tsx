@@ -12,8 +12,8 @@ interface Props {
 }
 
 export function ProjectLinkForm({ project, onSave, onUnlink, onDetect, onCancel }: Props) {
-  const [remoteUrl, setRemoteUrl] = useState(project.gitRemote ?? '');
-  const [cursorPos, setCursorPos] = useState(() => (project.gitRemote ?? '').length);
+  const [remoteUrl, setRemoteUrl] = useState(project.gitRemote?.value ?? '');
+  const [cursorPos, setCursorPos] = useState(() => (project.gitRemote?.value ?? '').length);
   const cursorRef = useRef(cursorPos);
   cursorRef.current = cursorPos;
 
@@ -98,7 +98,7 @@ export function ProjectLinkForm({ project, onSave, onUnlink, onDetect, onCancel 
             color={project.gitRemote ? theme.yaml.value : theme.table.fg}
             dimColor={!project.gitRemote}
           >
-            {project.gitRemote ?? '(none)'}
+            {project.gitRemote?.value ?? '(none)'}
           </Text>
         </Box>
 

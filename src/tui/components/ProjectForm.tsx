@@ -40,7 +40,7 @@ export function ProjectForm({ editingProject, onSave, onCancel }: Props) {
         name: editingProject.name,
         key: editingProject.key,
         description: editingProject.description,
-        gitRemote: editingProject.gitRemote ?? '',
+        gitRemote: editingProject.gitRemote?.value ?? '',
         isDefault: editingProject.isDefault ? 'yes' : 'no',
       };
     }

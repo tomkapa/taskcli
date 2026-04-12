@@ -5,6 +5,7 @@ import { runMigrations } from '../../src/db/migrator.js';
 import type { Container } from '../../src/cli/container.js';
 import type { DetectGitRemoteFn } from '../../src/service/project.service.js';
 import type { Project } from '../../src/types/project.js';
+import { GitRemote } from '../../src/types/git-remote.js';
 import { ok } from '../../src/types/common.js';
 import { isTerminalStatus } from '../../src/types/enums.js';
 
@@ -176,7 +177,7 @@ describe('TaskService', () => {
     db.exec('PRAGMA journal_mode = WAL');
     db.exec('PRAGMA foreign_keys = ON');
     runMigrations(db);
-    const mockDetect: DetectGitRemoteFn = () => ok('git@github.com:org/ka.git');
+    const mockDetect: DetectGitRemoteFn = () => ok(GitRemote.parse('git@github.com:org/ka.git'));
     const c = createContainer(db, '', mockDetect);
 
     c.projectService.createProject({ name: 'Default', isDefault: true, key: 'DEF' });
@@ -207,7 +208,7 @@ describe('TaskService', () => {
     db.exec('PRAGMA journal_mode = WAL');
     db.exec('PRAGMA foreign_keys = ON');
     runMigrations(db);
-    const mockDetect: DetectGitRemoteFn = () => ok('git@github.com:org/ka.git');
+    const mockDetect: DetectGitRemoteFn = () => ok(GitRemote.parse('git@github.com:org/ka.git'));
     const c = createContainer(db, '', mockDetect);
 
     c.projectService.createProject({ name: 'Default', isDefault: true, key: 'DEF' });

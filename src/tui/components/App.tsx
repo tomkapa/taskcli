@@ -1043,11 +1043,11 @@ export function App({ container, initialProject, latestVersion }: Props) {
       const result = container.projectService.linkGitRemote(state.linkingProject.id, remote);
       if (result.ok) {
         logger.info(
-          `TUI.linkGitRemote: linked project=${state.linkingProject.id} remote=${result.value.gitRemote}`,
+          `TUI.linkGitRemote: linked project=${state.linkingProject.id} remote=${result.value.gitRemote?.value}`,
         );
         dispatch({
           type: 'FLASH',
-          message: `Linked to: ${result.value.gitRemote}`,
+          message: `Linked to: ${result.value.gitRemote?.value}`,
           level: 'info',
         });
         dispatch({ type: 'GO_BACK' });
@@ -1077,8 +1077,8 @@ export function App({ container, initialProject, latestVersion }: Props) {
   const handleLinkDetect = useCallback((): string | null => {
     const result = detectGitRemote();
     if (result.ok && result.value) {
-      dispatch({ type: 'FLASH', message: `Detected: ${result.value}`, level: 'info' });
-      return result.value;
+      dispatch({ type: 'FLASH', message: `Detected: ${result.value.value}`, level: 'info' });
+      return result.value.value;
     }
     dispatch({ type: 'FLASH', message: 'No git remote detected in cwd', level: 'warn' });
     return null;

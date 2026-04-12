@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as childProcess from 'node:child_process';
 import { detectGitRemote } from '../../src/utils/git.js';
+import { GitRemote } from '../../src/types/git-remote.js';
 
 vi.mock('node:child_process', () => ({
   spawnSync: vi.fn(),
@@ -17,7 +18,7 @@ afterEach(() => {
 });
 
 describe('detectGitRemote', () => {
-  it('returns the trimmed remote URL on success', () => {
+  it('returns a GitRemote with normalized value on success', () => {
     spawnSyncMock.mockReturnValue({
       status: 0,
       stdout: '  git@github.com:org/repo.git\n',
@@ -30,7 +31,8 @@ describe('detectGitRemote', () => {
     const result = detectGitRemote('/some/dir');
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toBe('git@github.com:org/repo.git');
+    expect(result.value).toBeInstanceOf(GitRemote);
+    expect(result.value?.value).toBe('github.com/org/repo');
     expect(spawnSyncMock).toHaveBeenCalledWith(
       'git',
       ['remote', 'get-url', 'origin'],
