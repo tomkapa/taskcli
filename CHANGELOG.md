@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-04-12
+
+### Added
+- Prompt to create project when unlinked git remote is detected on TUI startup
+- Project edit support in TUI and `--git-remote` flag for CLI
+- Git remote field to create project form
+- Arrow key navigation and inline cursor movement in form fields
+
+### Changed
+- Introduce `GitRemote` value object to enforce URL normalization
+
+### Fixed
+- Restore terminal raw mode around external editor to prevent readonly mode
+
 ## [0.6.0] - 2026-04-12
 
 ### Added
@@ -76,7 +90,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Project management with default project support
 - Zod validation across all service layer inputs
 
-[Unreleased]: https://github.com/tomkapa/tayto/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/tomkapa/tayto/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/tomkapa/tayto/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/tomkapa/tayto/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/tomkapa/tayto/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/tomkapa/tayto/compare/v0.4.0...v0.4.1
