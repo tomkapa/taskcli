@@ -7,17 +7,23 @@ function getEditor(): string {
   return process.env['EDITOR'] ?? process.env['VISUAL'] ?? 'vi';
 }
 
-export function openInEditor(content: string, filename: string): string | null {
+export function openInEditor(
+  content: string,
+  filename: string,
+  options?: { beforeOpen?: () => void; afterOpen?: () => void },
+): string | null {
   const dir = mkdtempSync(join(tmpdir(), 'task-'));
   const filepath = join(dir, filename);
 
   writeFileSync(filepath, content, 'utf-8');
 
   const editor = getEditor();
+  options?.beforeOpen?.();
   const result = spawnSync(editor, [filepath], {
     stdio: 'inherit',
     shell: true,
   });
+  options?.afterOpen?.();
 
   if (result.status !== 0) {
     try {

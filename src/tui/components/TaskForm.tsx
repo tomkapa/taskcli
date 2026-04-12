@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text, useInput, useStdin } from 'ink';
 import { TaskStatus, TaskType } from '../../types/enums.js';
 import type { Task } from '../../types/task.js';
 import type { DependencyEntry } from '../../types/task.js';
@@ -73,6 +73,7 @@ export function TaskForm({ editingTask, allTasks, initialDeps, onSave, onCancel 
   const [editorActive, setEditorActive] = useState(false);
   const [pickerActive, setPickerActive] = useState(false);
   const [pickedDeps, setPickedDeps] = useState(initialDeps ?? []);
+  const { setRawMode } = useStdin();
 
   useEffect(() => {
     const field = FIELDS[focusIndex];
@@ -90,14 +91,17 @@ export function TaskForm({ editingTask, allTasks, initialDeps, onSave, onCancel 
       setEditorActive(true);
       setTimeout(() => {
         const content = values[field.key] ?? '';
-        const result = openInEditor(content, field.editorFilename ?? `${field.key}.md`);
+        const result = openInEditor(content, field.editorFilename ?? `${field.key}.md`, {
+          beforeOpen: () => setRawMode(false),
+          afterOpen: () => setRawMode(true),
+        });
         if (result !== null) {
           setValues((v) => ({ ...v, [field.key]: result }));
         }
         setEditorActive(false);
       }, 50);
     },
-    [values],
+    [values, setRawMode],
   );
 
   const handlePickerConfirm = useCallback((selected: PickedDependency[]) => {
