@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { Project } from '../../types/project.js';
 import { theme } from '../theme.js';
@@ -13,6 +13,9 @@ interface Props {
 
 export function ProjectLinkForm({ project, onSave, onUnlink, onDetect, onCancel }: Props) {
   const [remoteUrl, setRemoteUrl] = useState(project.gitRemote ?? '');
+  const [cursorPos, setCursorPos] = useState(() => (project.gitRemote ?? '').length);
+  const cursorRef = useRef(cursorPos);
+  cursorRef.current = cursorPos;
 
   useInput((input, key) => {
     if (key.escape) {
@@ -32,6 +35,8 @@ export function ProjectLinkForm({ project, onSave, onUnlink, onDetect, onCancel 
       const detected = onDetect();
       if (detected) {
         setRemoteUrl(detected);
+        cursorRef.current = detected.length;
+        setCursorPos(detected.length);
       }
       return;
     }
@@ -43,13 +48,31 @@ export function ProjectLinkForm({ project, onSave, onUnlink, onDetect, onCancel 
       return;
     }
 
+    if (key.leftArrow) {
+      setCursorPos((p) => Math.max(0, p - 1));
+      return;
+    }
+
+    if (key.rightArrow) {
+      setCursorPos((p) => Math.min(remoteUrl.length, p + 1));
+      return;
+    }
+
     if (key.backspace || key.delete) {
-      setRemoteUrl((v) => v.slice(0, -1));
+      const pos = cursorRef.current;
+      if (pos > 0) {
+        setRemoteUrl((v) => v.slice(0, pos - 1) + v.slice(pos));
+        cursorRef.current = pos - 1;
+        setCursorPos(pos - 1);
+      }
       return;
     }
 
     if (input && !key.ctrl && !key.meta) {
-      setRemoteUrl((v) => v + input);
+      const pos = cursorRef.current;
+      setRemoteUrl((v) => v.slice(0, pos) + input + v.slice(pos));
+      cursorRef.current = pos + input.length;
+      setCursorPos(pos + input.length);
     }
   });
 
@@ -84,8 +107,9 @@ export function ProjectLinkForm({ project, onSave, onUnlink, onDetect, onCancel 
             {'Remote URL: '}
           </Text>
           <Text color={theme.yaml.value}>
-            {remoteUrl}
+            {remoteUrl.slice(0, cursorPos)}
             <Text color={theme.titleHighlight}>_</Text>
+            {remoteUrl.slice(cursorPos)}
           </Text>
         </Box>
       </Box>

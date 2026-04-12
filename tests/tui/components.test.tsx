@@ -1,11 +1,13 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render } from 'ink-testing-library';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, cleanup } from 'ink-testing-library';
 import type { Task } from '../../src/types/task.js';
 import type { Project } from '../../src/types/project.js';
 import { TaskList } from '../../src/tui/components/TaskList.js';
 import { TaskDetail } from '../../src/tui/components/TaskDetail.js';
 import { TaskForm } from '../../src/tui/components/TaskForm.js';
 import { TaskPicker } from '../../src/tui/components/TaskPicker.js';
+import { ProjectForm } from '../../src/tui/components/ProjectForm.js';
+import { ProjectLinkForm } from '../../src/tui/components/ProjectLinkForm.js';
 import { ProjectSelector } from '../../src/tui/components/ProjectSelector.js';
 import { Header } from '../../src/tui/components/Header.js';
 import { Crumbs } from '../../src/tui/components/Crumbs.js';
@@ -42,7 +44,17 @@ const mockProject: Project = {
   updatedAt: '2024-01-01T00:00:00Z',
 };
 
+// ANSI escape sequences for arrow keys
+const ARROW_UP = '\x1B[A';
+const ARROW_DOWN = '\x1B[B';
+const ARROW_RIGHT = '\x1B[C';
+const ARROW_LEFT = '\x1B[D';
+const BACKSPACE = '\x7F';
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 describe('TUI Component Rendering', () => {
+  afterEach(cleanup);
+
   describe('Badges', () => {
     it('renders StatusBadge without crashing', () => {
       const { lastFrame } = render(<StatusBadge status="in-progress" />);
@@ -309,6 +321,7 @@ describe('TUI Component Rendering', () => {
       expect(frame).toContain('Type');
       expect(frame).toContain('Status');
       expect(frame).toContain('ctrl+s: save');
+      expect(frame).toContain('navigate');
     });
 
     it('renders edit form with existing data', () => {
@@ -359,6 +372,220 @@ describe('TUI Component Rendering', () => {
         <TaskForm editingTask={mockTask} allTasks={[]} onSave={() => {}} onCancel={() => {}} />,
       );
       expect(lastFrame()).toContain('none');
+    });
+
+    it('moves focus down with down arrow from inline field', async () => {
+      const { stdin, lastFrame } = render(
+        <TaskForm editingTask={null} allTasks={[]} onSave={() => {}} onCancel={() => {}} />,
+      );
+      await delay(50);
+      stdin.write(ARROW_DOWN);
+      await delay(50);
+      const frame = lastFrame() ?? '';
+      expect(frame).toContain('> Type');
+    });
+
+    it('moves focus up with up arrow from select field', async () => {
+      const { stdin, lastFrame } = render(
+        <TaskForm editingTask={null} allTasks={[]} onSave={() => {}} onCancel={() => {}} />,
+      );
+      await delay(50);
+      stdin.write(ARROW_DOWN);
+      await delay(50);
+      stdin.write(ARROW_UP);
+      await delay(50);
+      expect(lastFrame()).toContain('> Name');
+    });
+
+    it('moves cursor left in inline field', async () => {
+      const { stdin, lastFrame } = render(
+        <TaskForm editingTask={mockTask} allTasks={[]} onSave={() => {}} onCancel={() => {}} />,
+      );
+      await delay(50);
+      // Name is "Fix login bug", cursor at end. Move left 3 times.
+      stdin.write(ARROW_LEFT);
+      await delay(50);
+      stdin.write(ARROW_LEFT);
+      await delay(50);
+      stdin.write(ARROW_LEFT);
+      await delay(50);
+      const frame = lastFrame() ?? '';
+      // Cursor _ should appear between "Fix login " and "bug"
+      expect(frame).toContain('Fix login _bug');
+    });
+
+    it('inserts character at cursor position in inline field', async () => {
+      const { stdin, lastFrame } = render(
+        <TaskForm editingTask={null} allTasks={[]} onSave={() => {}} onCancel={() => {}} />,
+      );
+      await delay(50);
+      stdin.write('abc');
+      await delay(50);
+      stdin.write(ARROW_LEFT);
+      await delay(50);
+      stdin.write('X');
+      await delay(50);
+      // Cursor is after 'X', so rendered as "abX_c"
+      expect(lastFrame()).toContain('abX_c');
+    });
+
+    it('backspace deletes at cursor position in inline field', async () => {
+      const { stdin, lastFrame } = render(
+        <TaskForm editingTask={null} allTasks={[]} onSave={() => {}} onCancel={() => {}} />,
+      );
+      await delay(50);
+      stdin.write('abcd');
+      await delay(50);
+      stdin.write(ARROW_LEFT);
+      await delay(50);
+      // Backspace should delete 'c'
+      stdin.write(BACKSPACE);
+      await delay(50);
+      expect(lastFrame()).toContain('ab_d');
+    });
+
+    it('up/down arrows navigate between select fields', async () => {
+      const { stdin, lastFrame } = render(
+        <TaskForm editingTask={null} allTasks={[]} onSave={() => {}} onCancel={() => {}} />,
+      );
+      await delay(50);
+      stdin.write(ARROW_DOWN);
+      await delay(50);
+      stdin.write(ARROW_DOWN);
+      await delay(50);
+      expect(lastFrame()).toContain('> Status');
+    });
+  });
+
+  describe('TaskForm keyboard navigation', () => {
+    it('does not move cursor below 0', async () => {
+      const { stdin, lastFrame } = render(
+        <TaskForm editingTask={null} allTasks={[]} onSave={() => {}} onCancel={() => {}} />,
+      );
+      await delay(50);
+      stdin.write(ARROW_LEFT);
+      await delay(50);
+      stdin.write('X');
+      await delay(50);
+      expect(lastFrame()).toContain('X');
+    });
+
+    it('does not move focus above first field', async () => {
+      const { stdin, lastFrame } = render(
+        <TaskForm editingTask={null} allTasks={[]} onSave={() => {}} onCancel={() => {}} />,
+      );
+      await delay(50);
+      stdin.write(ARROW_UP);
+      await delay(50);
+      expect(lastFrame()).toContain('> Name');
+    });
+
+    it('backspace does nothing at cursor position 0', async () => {
+      const { stdin, lastFrame } = render(
+        <TaskForm editingTask={null} allTasks={[]} onSave={() => {}} onCancel={() => {}} />,
+      );
+      await delay(50);
+      stdin.write('ab');
+      await delay(50);
+      stdin.write(ARROW_LEFT);
+      await delay(50);
+      stdin.write(ARROW_LEFT);
+      await delay(50);
+      stdin.write(BACKSPACE);
+      await delay(50);
+      expect(lastFrame()).toContain('ab');
+    });
+  });
+
+  describe('ProjectForm keyboard navigation', () => {
+    it('moves focus with up/down arrows', async () => {
+      const { stdin, lastFrame } = render(
+        <ProjectForm onSave={() => {}} onCancel={() => {}} />,
+      );
+      await delay(50);
+      stdin.write(ARROW_DOWN);
+      await delay(50);
+      expect(lastFrame()).toContain('> Key');
+    });
+
+    it('moves cursor left/right in inline field', async () => {
+      const { stdin, lastFrame } = render(
+        <ProjectForm onSave={() => {}} onCancel={() => {}} />,
+      );
+      await delay(50);
+      stdin.write('test');
+      await delay(50);
+      stdin.write(ARROW_LEFT);
+      await delay(50);
+      stdin.write(ARROW_LEFT);
+      await delay(50);
+      stdin.write('XX');
+      await delay(50);
+      // Cursor is after XX: "teXX_st"
+      expect(lastFrame()).toContain('teXX_st');
+    });
+
+    it('up/down arrows navigate toggle fields', async () => {
+      const { stdin, lastFrame } = render(
+        <ProjectForm onSave={() => {}} onCancel={() => {}} />,
+      );
+      await delay(50);
+      stdin.write(ARROW_DOWN);
+      await delay(50);
+      stdin.write(ARROW_DOWN);
+      await delay(50);
+      stdin.write(ARROW_DOWN);
+      await delay(50);
+      expect(lastFrame()).toContain('> Default');
+      stdin.write(ARROW_UP);
+      await delay(50);
+      expect(lastFrame()).toContain('> Description');
+    });
+  });
+
+  describe('ProjectLinkForm cursor navigation', () => {
+    it('moves cursor left/right and inserts at position', async () => {
+      const { stdin, lastFrame } = render(
+        <ProjectLinkForm
+          project={mockProject}
+          onSave={() => {}}
+          onUnlink={() => {}}
+          onDetect={() => null}
+          onCancel={() => {}}
+        />,
+      );
+      await delay(50);
+      stdin.write('abcd');
+      await delay(50);
+      stdin.write(ARROW_LEFT);
+      await delay(50);
+      stdin.write(ARROW_LEFT);
+      await delay(50);
+      stdin.write('X');
+      await delay(50);
+      // Cursor after X: "abX_cd"
+      expect(lastFrame()).toContain('abX_cd');
+    });
+
+    it('backspace deletes at cursor position', async () => {
+      const { stdin, lastFrame } = render(
+        <ProjectLinkForm
+          project={mockProject}
+          onSave={() => {}}
+          onUnlink={() => {}}
+          onDetect={() => null}
+          onCancel={() => {}}
+        />,
+      );
+      await delay(50);
+      stdin.write('abcd');
+      await delay(50);
+      stdin.write(ARROW_LEFT);
+      await delay(50);
+      stdin.write(BACKSPACE);
+      await delay(50);
+      // Cursor after deletion: "ab_d"
+      expect(lastFrame()).toContain('ab_d');
     });
   });
 
@@ -578,7 +805,8 @@ describe('TUI Component Rendering', () => {
       const state = { ...initialState, activeView: ViewType.TaskCreate };
       const { lastFrame } = render(<Header state={state} />);
       const frame = lastFrame() ?? '';
-      expect(frame).toContain('next field');
+      expect(frame).toContain('navigate');
+      expect(frame).toContain('cursor');
       expect(frame).toContain('save');
       expect(frame).toContain('cancel');
     });
@@ -660,6 +888,8 @@ describe('TUI Component Rendering', () => {
       const { lastFrame } = render(<HelpOverlay />);
       const frame = lastFrame() ?? '';
       expect(frame).toContain('ctrl+s');
+      expect(frame).toContain('Navigate fields');
+      expect(frame).toContain('Move cursor');
       expect(frame).toContain('Open editor');
     });
 

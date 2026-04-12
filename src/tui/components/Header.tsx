@@ -108,7 +108,8 @@ function getKeyHints(state: AppState): KeyHint[] {
 
   if (activeView === ViewType.TaskCreate || activeView === ViewType.TaskEdit) {
     return [
-      { key: 'tab', desc: 'next field' },
+      { key: '↑↓/tab', desc: 'navigate' },
+      { key: '←→', desc: 'cursor' },
       { key: 'ctrl+s', desc: 'save' },
       { key: 'esc', desc: 'cancel' },
     ];

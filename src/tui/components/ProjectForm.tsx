@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { theme } from '../theme.js';
 
@@ -30,6 +30,18 @@ export function ProjectForm({ onSave, onCancel }: Props) {
     description: '',
     isDefault: 'no',
   });
+  const [cursorPos, setCursorPos] = useState(0);
+  const cursorRef = useRef(cursorPos);
+  cursorRef.current = cursorPos;
+
+  useEffect(() => {
+    const field = FIELDS[focusIndex];
+    if (field?.type === 'inline') {
+      const pos = values[field.key]?.length ?? 0;
+      setCursorPos(pos);
+      cursorRef.current = pos;
+    }
+  }, [focusIndex]);
 
   const currentField = FIELDS[focusIndex];
 
@@ -63,14 +75,40 @@ export function ProjectForm({ onSave, onCancel }: Props) {
       return;
     }
 
+    if (key.upArrow) {
+      setFocusIndex((i) => Math.max(0, i - 1));
+      return;
+    }
+    if (key.downArrow) {
+      setFocusIndex((i) => Math.min(FIELDS.length - 1, i + 1));
+      return;
+    }
+
     if (currentField.type === 'inline') {
-      const currentValue = values[currentField.key] ?? '';
-      if (key.backspace || key.delete) {
-        setValues((v) => ({ ...v, [currentField.key]: currentValue.slice(0, -1) }));
+      if (key.leftArrow) {
+        setCursorPos((p) => Math.max(0, p - 1));
+      } else if (key.rightArrow) {
+        setCursorPos((p) => Math.min((values[currentField.key] ?? '').length, p + 1));
+      } else if (key.backspace || key.delete) {
+        const pos = cursorRef.current;
+        if (pos > 0) {
+          setValues((v) => {
+            const cur = v[currentField.key] ?? '';
+            return { ...v, [currentField.key]: cur.slice(0, pos - 1) + cur.slice(pos) };
+          });
+          cursorRef.current = pos - 1;
+          setCursorPos(pos - 1);
+        }
       } else if (key.return) {
         setFocusIndex((i) => Math.min(FIELDS.length - 1, i + 1));
       } else if (input && !key.ctrl && !key.meta) {
-        setValues((v) => ({ ...v, [currentField.key]: currentValue + input }));
+        const pos = cursorRef.current;
+        setValues((v) => {
+          const cur = v[currentField.key] ?? '';
+          return { ...v, [currentField.key]: cur.slice(0, pos) + input + cur.slice(pos) };
+        });
+        cursorRef.current = pos + input.length;
+        setCursorPos(pos + input.length);
       }
     }
 
@@ -106,8 +144,15 @@ export function ProjectForm({ onSave, onCancel }: Props) {
 
               {field.type === 'inline' && (
                 <Text color={isFocused ? theme.yaml.value : theme.table.fg}>
-                  {value}
-                  {isFocused ? <Text color={theme.titleHighlight}>_</Text> : ''}
+                  {isFocused ? (
+                    <>
+                      {value.slice(0, cursorPos)}
+                      <Text color={theme.titleHighlight}>_</Text>
+                      {value.slice(cursorPos)}
+                    </>
+                  ) : (
+                    value
+                  )}
                   {field.key === 'key' && !value && (
                     <Text dimColor>{isFocused ? ' (auto from name)' : ''}</Text>
                   )}
@@ -129,7 +174,7 @@ export function ProjectForm({ onSave, onCancel }: Props) {
       <Box flexGrow={1} />
 
       <Box paddingX={1}>
-        <Text dimColor>tab: next | shift+tab: prev | ctrl+s: save | esc: cancel</Text>
+        <Text dimColor>{'↑↓/tab: navigate | ←→: cursor | ctrl+s: save | esc: cancel'}</Text>
       </Box>
     </Box>
   );

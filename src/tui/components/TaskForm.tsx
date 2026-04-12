@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { TaskStatus, TaskType } from '../../types/enums.js';
 import type { Task } from '../../types/task.js';
@@ -67,9 +67,21 @@ export function TaskForm({ editingTask, allTasks, initialDeps, onSave, onCancel 
     technicalNotes: editingTask?.technicalNotes ?? '',
     additionalRequirements: editingTask?.additionalRequirements ?? '',
   });
+  const [cursorPos, setCursorPos] = useState(() => (editingTask?.name ?? '').length);
+  const cursorRef = useRef(cursorPos);
+  cursorRef.current = cursorPos;
   const [editorActive, setEditorActive] = useState(false);
   const [pickerActive, setPickerActive] = useState(false);
   const [pickedDeps, setPickedDeps] = useState(initialDeps ?? []);
+
+  useEffect(() => {
+    const field = FIELDS[focusIndex];
+    if (field?.type === 'inline') {
+      const pos = values[field.key]?.length ?? 0;
+      setCursorPos(pos);
+      cursorRef.current = pos;
+    }
+  }, [focusIndex]);
 
   const currentField = FIELDS[focusIndex];
 
@@ -133,34 +145,53 @@ export function TaskForm({ editingTask, allTasks, initialDeps, onSave, onCancel 
         return;
       }
 
+      // Up/down arrows navigate fields for all field types
+      if (key.upArrow) {
+        setFocusIndex((i) => Math.max(0, i - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setFocusIndex((i) => Math.min(FIELDS.length - 1, i + 1));
+        return;
+      }
+
       if (currentField.type === 'inline') {
-        const currentValue = values[currentField.key] ?? '';
-        if (key.backspace || key.delete) {
-          setValues((v) => ({ ...v, [currentField.key]: currentValue.slice(0, -1) }));
+        if (key.leftArrow) {
+          setCursorPos((p) => Math.max(0, p - 1));
+        } else if (key.rightArrow) {
+          setCursorPos((p) => Math.min((values[currentField.key] ?? '').length, p + 1));
+        } else if (key.backspace || key.delete) {
+          const pos = cursorRef.current;
+          if (pos > 0) {
+            setValues((v) => {
+              const cur = v[currentField.key] ?? '';
+              return { ...v, [currentField.key]: cur.slice(0, pos - 1) + cur.slice(pos) };
+            });
+            cursorRef.current = pos - 1;
+            setCursorPos(pos - 1);
+          }
         } else if (key.return) {
           setFocusIndex((i) => Math.min(FIELDS.length - 1, i + 1));
         } else if (input && !key.ctrl && !key.meta) {
-          setValues((v) => ({ ...v, [currentField.key]: currentValue + input }));
+          const pos = cursorRef.current;
+          setValues((v) => {
+            const cur = v[currentField.key] ?? '';
+            return { ...v, [currentField.key]: cur.slice(0, pos) + input + cur.slice(pos) };
+          });
+          cursorRef.current = pos + input.length;
+          setCursorPos(pos + input.length);
         }
       }
 
       if (currentField.type === 'picker') {
         if (key.return) {
           setPickerActive(true);
-        } else if (key.downArrow) {
-          setFocusIndex((i) => Math.min(FIELDS.length - 1, i + 1));
-        } else if (key.upArrow) {
-          setFocusIndex((i) => Math.max(0, i - 1));
         }
       }
 
       if (currentField.type === 'editor') {
         if (key.return) {
           launchEditor(currentField);
-        } else if (key.downArrow) {
-          setFocusIndex((i) => Math.min(FIELDS.length - 1, i + 1));
-        } else if (key.upArrow) {
-          setFocusIndex((i) => Math.max(0, i - 1));
         }
       }
 
@@ -217,7 +248,6 @@ export function TaskForm({ editingTask, allTasks, initialDeps, onSave, onCancel 
         {FIELDS.map((field, i) => {
           const isFocused = i === focusIndex;
           const value = field.key === 'dependsOn' ? depSummary : (values[field.key] ?? '');
-          const displayValue = value;
 
           return (
             <Box key={field.key} gap={1}>
@@ -227,16 +257,23 @@ export function TaskForm({ editingTask, allTasks, initialDeps, onSave, onCancel 
 
               {field.type === 'inline' && (
                 <Text color={isFocused ? theme.yaml.value : theme.table.fg}>
-                  {displayValue}
-                  {isFocused ? <Text color={theme.titleHighlight}>_</Text> : ''}
+                  {isFocused ? (
+                    <>
+                      {value.slice(0, cursorPos)}
+                      <Text color={theme.titleHighlight}>_</Text>
+                      {value.slice(cursorPos)}
+                    </>
+                  ) : (
+                    value
+                  )}
                 </Text>
               )}
 
               {field.type === 'picker' && (
                 <Text>
-                  {displayValue ? (
+                  {value ? (
                     <Text color={theme.status.added}>
-                      {displayValue.length > 60 ? displayValue.slice(0, 60) + '...' : displayValue}
+                      {value.length > 60 ? value.slice(0, 60) + '...' : value}
                     </Text>
                   ) : (
                     <Text dimColor>{isFocused ? 'press enter to select' : 'none'}</Text>
@@ -247,10 +284,10 @@ export function TaskForm({ editingTask, allTasks, initialDeps, onSave, onCancel 
 
               {field.type === 'editor' && (
                 <Text>
-                  {displayValue ? (
+                  {value ? (
                     <Text color={theme.status.added}>
-                      {displayValue.split('\n')[0]?.slice(0, 50)}
-                      {displayValue.length > 50 || displayValue.includes('\n') ? '...' : ''}
+                      {value.split('\n')[0]?.slice(0, 50)}
+                      {value.length > 50 || value.includes('\n') ? '...' : ''}
                     </Text>
                   ) : (
                     <Text dimColor>{isFocused ? 'press enter' : 'empty'}</Text>
@@ -262,7 +299,7 @@ export function TaskForm({ editingTask, allTasks, initialDeps, onSave, onCancel 
               {field.type === 'select' && (
                 <Text color={isFocused ? theme.yaml.value : theme.table.fg}>
                   {isFocused ? '< ' : '  '}
-                  {displayValue}
+                  {value}
                   {isFocused ? ' >' : ''}
                 </Text>
               )}
@@ -274,7 +311,7 @@ export function TaskForm({ editingTask, allTasks, initialDeps, onSave, onCancel 
       <Box flexGrow={1} />
 
       <Box paddingX={1}>
-        <Text dimColor>tab: next | shift+tab: prev | ctrl+s: save | esc: cancel</Text>
+        <Text dimColor>{'↑↓/tab: navigate | ←→: cursor | ctrl+s: save | esc: cancel'}</Text>
       </Box>
       {editorActive && (
         <Box paddingX={1}>

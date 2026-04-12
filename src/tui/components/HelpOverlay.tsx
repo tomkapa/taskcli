@@ -75,10 +75,10 @@ const ROW2: Section[] = [
   {
     title: 'FORMS',
     keys: [
-      ['tab', 'Next field'],
-      ['shift+tab', 'Prev field'],
+      ['↑↓/tab', 'Navigate fields'],
+      ['←→', 'Move cursor'],
       ['ctrl+s', 'Save'],
-      ['enter', 'Open editor'],
+      ['enter', 'Open editor / next'],
       ['esc', 'Cancel'],
     ],
   },
