@@ -499,9 +499,7 @@ describe('TUI Component Rendering', () => {
 
   describe('ProjectForm keyboard navigation', () => {
     it('moves focus with up/down arrows', async () => {
-      const { stdin, lastFrame } = render(
-        <ProjectForm onSave={() => {}} onCancel={() => {}} />,
-      );
+      const { stdin, lastFrame } = render(<ProjectForm onSave={() => {}} onCancel={() => {}} />);
       await delay(50);
       stdin.write(ARROW_DOWN);
       await delay(50);
@@ -509,9 +507,7 @@ describe('TUI Component Rendering', () => {
     });
 
     it('moves cursor left/right in inline field', async () => {
-      const { stdin, lastFrame } = render(
-        <ProjectForm onSave={() => {}} onCancel={() => {}} />,
-      );
+      const { stdin, lastFrame } = render(<ProjectForm onSave={() => {}} onCancel={() => {}} />);
       await delay(50);
       stdin.write('test');
       await delay(50);
@@ -526,20 +522,48 @@ describe('TUI Component Rendering', () => {
     });
 
     it('up/down arrows navigate toggle fields', async () => {
-      const { stdin, lastFrame } = render(
-        <ProjectForm onSave={() => {}} onCancel={() => {}} />,
-      );
+      const { stdin, lastFrame } = render(<ProjectForm onSave={() => {}} onCancel={() => {}} />);
       await delay(50);
       stdin.write(ARROW_DOWN);
       await delay(50);
       stdin.write(ARROW_DOWN);
       await delay(50);
+      stdin.write(ARROW_DOWN);
+      await delay(50);
+      expect(lastFrame()).toContain('> Git Remote');
       stdin.write(ARROW_DOWN);
       await delay(50);
       expect(lastFrame()).toContain('> Default');
       stdin.write(ARROW_UP);
       await delay(50);
-      expect(lastFrame()).toContain('> Description');
+      expect(lastFrame()).toContain('> Git Remote');
+    });
+
+    it('includes gitRemote in save callback', async () => {
+      const onSave = vi.fn();
+      const { stdin } = render(<ProjectForm onSave={onSave} onCancel={() => {}} />);
+      await delay(50);
+      // Name field
+      stdin.write('MyProject');
+      await delay(50);
+      // Navigate to Git Remote (3 downs: Key -> Description -> Git Remote)
+      stdin.write(ARROW_DOWN);
+      await delay(50);
+      stdin.write(ARROW_DOWN);
+      await delay(50);
+      stdin.write(ARROW_DOWN);
+      await delay(50);
+      stdin.write('https://github.com/test/repo.git');
+      await delay(50);
+      // ctrl+s to save
+      stdin.write('\x13');
+      await delay(50);
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'MyProject',
+          gitRemote: 'https://github.com/test/repo.git',
+        }),
+      );
     });
   });
 

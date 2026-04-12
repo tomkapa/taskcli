@@ -970,12 +970,19 @@ export function App({ container, initialProject, latestVersion }: Props) {
   }, []);
 
   const handleProjectFormSave = useCallback(
-    (data: { name: string; key: string; description: string; isDefault: boolean }) => {
+    (data: {
+      name: string;
+      key: string;
+      description: string;
+      isDefault: boolean;
+      gitRemote: string;
+    }) => {
       const result = container.projectService.createProject({
         name: data.name,
         key: data.key || undefined,
         description: data.description || undefined,
         isDefault: data.isDefault,
+        gitRemote: data.gitRemote || undefined,
       });
       if (result.ok) {
         logger.info(`TUI.createProject: created key=${result.value.key} name=${result.value.name}`);

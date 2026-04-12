@@ -3,11 +3,17 @@ import { Box, Text, useInput } from 'ink';
 import { theme } from '../theme.js';
 
 interface Props {
-  onSave: (data: { name: string; key: string; description: string; isDefault: boolean }) => void;
+  onSave: (data: {
+    name: string;
+    key: string;
+    description: string;
+    isDefault: boolean;
+    gitRemote: string;
+  }) => void;
   onCancel: () => void;
 }
 
-type FieldKey = 'name' | 'key' | 'description' | 'isDefault';
+type FieldKey = 'name' | 'key' | 'description' | 'gitRemote' | 'isDefault';
 
 interface Field {
   label: string;
@@ -19,6 +25,7 @@ const FIELDS: Field[] = [
   { label: 'Name', key: 'name', type: 'inline' },
   { label: 'Key', key: 'key', type: 'inline' },
   { label: 'Description', key: 'description', type: 'inline' },
+  { label: 'Git Remote', key: 'gitRemote', type: 'inline' },
   { label: 'Default', key: 'isDefault', type: 'toggle' },
 ];
 
@@ -28,6 +35,7 @@ export function ProjectForm({ onSave, onCancel }: Props) {
     name: '',
     key: '',
     description: '',
+    gitRemote: '',
     isDefault: 'no',
   });
   const [cursorPos, setCursorPos] = useState(0);
@@ -69,6 +77,7 @@ export function ProjectForm({ onSave, onCancel }: Props) {
           name: nameVal,
           key: values['key'] ?? '',
           description: values['description'] ?? '',
+          gitRemote: values['gitRemote'] ?? '',
           isDefault: values['isDefault'] === 'yes',
         });
       }
