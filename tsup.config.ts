@@ -9,7 +9,7 @@ const changelogEntries = parseChangelog(changelogRaw);
 export default defineConfig({
   entry: ['src/index.ts'],
   format: ['esm'],
-  target: 'node25',
+  target: 'node22',
   platform: 'node',
   outDir: 'dist',
   clean: true,

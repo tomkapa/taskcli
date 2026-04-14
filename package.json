@@ -1,6 +1,6 @@
 {
   "name": "@tomkapa/tayto",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "CLI tool for task management - for solo devs and AI agents",
   "type": "module",
   "bin": {
@@ -19,7 +19,7 @@
     "test:watch": "vitest"
   },
   "engines": {
-    "node": ">=25"
+    "node": ">=22"
   },
   "keywords": [
     "cli",
