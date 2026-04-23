@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { createContainer } from '../../src/cli/container.js';
+import {
+  presentPortabilityServiceError,
+  presentProjectServiceError,
+} from '../../src/service/errors.js';
+import { createSqliteRepositorySet } from '../../src/repository/index.js';
 import { runMigrations } from '../../src/db/migrator.js';
 import type { Container } from '../../src/cli/container.js';
 import type { Project } from '../../src/types/project.js';
@@ -15,7 +20,7 @@ beforeEach(() => {
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
   runMigrations(db);
-  container = createContainer(db);
+  container = createContainer(createSqliteRepositorySet(db));
   container.projectService.createProject({ name: 'TestProj', isDefault: true });
   const p = container.projectService.resolveProject();
   if (!p.ok) throw new Error('setup failed');
@@ -102,7 +107,7 @@ describe('PortabilityService.exportTasks', () => {
     const result = container.projectService.resolveProject('NonExistent');
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('NOT_FOUND');
+    expect(presentProjectServiceError(result.error).code).toBe('NOT_FOUND');
   });
 });
 
@@ -262,7 +267,7 @@ describe('PortabilityService.importTasks', () => {
     const result = container.portabilityService.importTasks(data, project);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('VALIDATION');
+    expect(presentPortabilityServiceError(result.error).code).toBe('VALIDATION');
     expect(result.error.message).toContain('id');
   });
 
@@ -274,7 +279,7 @@ describe('PortabilityService.importTasks', () => {
     const result = container.portabilityService.importTasks(data, project);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('VALIDATION');
+    expect(presentPortabilityServiceError(result.error).code).toBe('VALIDATION');
     expect(result.error.message).toContain('name');
   });
 
@@ -287,7 +292,7 @@ describe('PortabilityService.importTasks', () => {
     const result = container.portabilityService.importTasks(data, project);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('VALIDATION');
+    expect(presentPortabilityServiceError(result.error).code).toBe('VALIDATION');
     expect(result.error.message).toContain('dependsOnId');
   });
 
@@ -297,7 +302,7 @@ describe('PortabilityService.importTasks', () => {
     const result = container.portabilityService.importTasks(data, project);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('VALIDATION');
+    expect(presentPortabilityServiceError(result.error).code).toBe('VALIDATION');
   });
 });
 

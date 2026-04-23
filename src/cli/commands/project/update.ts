@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import type { Container } from '../../container.js';
-import type { UpdateProjectInput } from '../../types/project.js';
-import { handleResult } from '../../output.js';
+import { handleResult, printError } from '../../output.js';
+import { presentProjectServiceError } from '../../../service/errors.js';
 
 export function registerProjectUpdate(parent: Command, container: Container): void {
   parent
@@ -23,11 +23,8 @@ export function registerProjectUpdate(parent: Command, container: Container): vo
         },
       ) => {
         const resolved = container.projectService.resolveProject(idOrKeyOrName);
-        if (!resolved.ok) {
-          handleResult(resolved);
-          return;
-        }
-        const updateInput: UpdateProjectInput = {
+        if (!resolved.ok) return printError(presentProjectServiceError(resolved.error));
+        const updateInput = {
           name: opts.name,
           description: opts.description,
           isDefault: opts.default,
@@ -38,7 +35,7 @@ export function registerProjectUpdate(parent: Command, container: Container): vo
               : {}),
         };
         const result = container.projectService.updateProject(resolved.value.id, updateInput);
-        handleResult(result);
+        handleResult(result, presentProjectServiceError);
       },
     );
 }

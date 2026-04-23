@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import type { Container } from '../../container.js';
-import { handleResult } from '../../output.js';
+import { handleResult, printError } from '../../output.js';
+import { presentProjectServiceError } from '../../../service/errors.js';
 
 export function registerProjectDelete(parent: Command, container: Container): void {
   parent
@@ -8,11 +9,8 @@ export function registerProjectDelete(parent: Command, container: Container): vo
     .description('Delete a project (lookup by id, key, or name)')
     .action((idOrKeyOrName: string) => {
       const resolved = container.projectService.resolveProject(idOrKeyOrName);
-      if (!resolved.ok) {
-        handleResult(resolved);
-        return;
-      }
+      if (!resolved.ok) return printError(presentProjectServiceError(resolved.error));
       const result = container.projectService.deleteProject(resolved.value.id);
-      handleResult(result);
+      handleResult(result, presentProjectServiceError);
     });
 }

@@ -1,3 +1,4 @@
+import assert from 'node:assert';
 import { ulid } from 'ulid';
 
 const ULID_REGEX = /^[0-9A-HJKMNP-TV-Z]{26}$/i;
@@ -19,9 +20,7 @@ export class InstallId {
 
   static parse(raw: string): InstallId {
     const trimmed = raw.trim();
-    if (!ULID_REGEX.test(trimmed)) {
-      throw new Error(`Invalid InstallId: expected ULID format, got "${trimmed}"`);
-    }
+    assert(ULID_REGEX.test(trimmed), `Invalid InstallId: expected ULID format, got "${trimmed}"`);
     return new InstallId(trimmed.toUpperCase());
   }
 

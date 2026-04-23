@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
 import type { Task } from '../../types/task.js';
+import type { TaskId } from '../../types/branded.js';
 import { DependencyType, UIDependencyType } from '../../types/enums.js';
 import { theme } from '../theme.js';
 import { DEP_TYPE_LABEL } from '../constants.js';
@@ -16,7 +17,7 @@ const DEP_TYPE_COLOR: Record<string, string> = {
 };
 
 export interface PickedDependency {
-  id: string;
+  id: TaskId;
   name: string;
   type: string;
 }
@@ -24,7 +25,7 @@ export interface PickedDependency {
 interface Props {
   tasks: Task[];
   /** Task IDs to exclude from the picker (e.g., the task being edited) */
-  excludeIds?: Set<string>;
+  excludeIds?: Set<TaskId>;
   initialSelection?: PickedDependency[];
   onConfirm: (selected: PickedDependency[]) => void;
   onCancel: () => void;
@@ -38,8 +39,8 @@ export function TaskPicker({ tasks, excludeIds, initialSelection, onConfirm, onC
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [cursorIndex, setCursorIndex] = useState(0);
-  const [selected, setSelected] = useState<Map<string, PickedDependency>>(() => {
-    const map = new Map<string, PickedDependency>();
+  const [selected, setSelected] = useState<Map<TaskId, PickedDependency>>(() => {
+    const map = new Map<TaskId, PickedDependency>();
     if (initialSelection) {
       for (const dep of initialSelection) {
         map.set(dep.id, dep);

@@ -3,8 +3,13 @@ import { Command } from 'commander';
 import type { Container } from '../../container.js';
 import { handleResult, printError } from '../../output.js';
 import { parseFieldMapping } from '../../../types/portability.js';
-import { AppError } from '../../../errors/app-error.js';
 import { withProject } from '../../helpers/project.js';
+import {
+  CliErr,
+  presentCliError,
+  presentPortabilityServiceError,
+  presentProjectServiceError,
+} from '../../../service/errors.js';
 
 export function registerTaskImport(parent: Command, container: Container): void {
   parent
@@ -22,23 +27,21 @@ export function registerTaskImport(parent: Command, container: Container): void 
         const raw = readFileSync(opts.file, 'utf-8');
         fileData = JSON.parse(raw);
       } catch (e) {
-        return printError(
-          new AppError(
-            'VALIDATION',
-            `Failed to read or parse file: ${opts.file}${e instanceof Error ? ` - ${e.message}` : ''}`,
-          ),
-        );
+        const detail = `Failed to read or parse file: ${opts.file}${e instanceof Error ? ` - ${e.message}` : ''}`;
+        return printError(presentCliError(CliErr.validation(detail)));
       }
 
       const fieldMapping = opts.map ? parseFieldMapping(opts.map) : undefined;
 
       const projectResult = withProject(container, opts.project);
-      if (!projectResult.ok) return printError(projectResult.error);
+      if (!projectResult.ok) {
+        return printError(presentProjectServiceError(projectResult.error));
+      }
       const result = container.portabilityService.importTasks(
         fileData,
         projectResult.value,
         fieldMapping,
       );
-      handleResult(result);
+      handleResult(result, presentPortabilityServiceError);
     });
 }

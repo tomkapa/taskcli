@@ -10,6 +10,7 @@ import {
 } from '../../types/enums.js';
 import type { Task, DependencyEntry } from '../../types/task.js';
 import type { Project } from '../../types/project.js';
+import type { TaskId } from '../../types/branded.js';
 import { ViewType, TopTab } from '../types.js';
 import { appReducer, initialState } from '../state.js';
 import { STATUS_VALUES, TYPE_VALUES } from '../constants.js';
@@ -126,7 +127,7 @@ export function App({ container, initialProject, latestVersion }: Props) {
   }, [container, state.activeProject]);
 
   const loadDeps = useCallback(
-    (taskId: string) => {
+    (taskId: TaskId) => {
       const blockersResult = container.dependencyService.listBlockers(taskId);
       const dependentsResult = container.dependencyService.listDependents(taskId);
       const relatedResult = container.dependencyService.listRelated(taskId);

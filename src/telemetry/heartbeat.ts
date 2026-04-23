@@ -1,7 +1,10 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { logger } from '../logging/logger.js';
-import { toMessage } from '../errors/app-error.js';
 import { InstallId } from '../types/install-id.js';
+
+function toMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
 import { isCI } from '../utils/ci.js';
 import type { FetchFn } from '../types/common.js';
 

@@ -1,6 +1,8 @@
 import { Command } from 'commander';
 import type { Container } from '../../container.js';
-import { handleResult } from '../../output.js';
+import { handleResult, printError } from '../../output.js';
+import { parseTaskIdArg } from '../../helpers/ids.js';
+import { presentTaskServiceError, presentCliError } from '../../../service/errors.js';
 
 export function registerTaskUpdate(parent: Command, container: Container): void {
   parent
@@ -18,7 +20,7 @@ export function registerTaskUpdate(parent: Command, container: Container): void 
     .option('--append-requirements <requirements>', 'Append to additional requirements')
     .action(
       (
-        id: string,
+        rawId: string,
         opts: {
           name?: string;
           description?: string;
@@ -36,7 +38,9 @@ export function registerTaskUpdate(parent: Command, container: Container): void 
           console.error('Cannot use --detach-parent and --parent together');
           process.exit(1);
         }
-        const result = container.taskService.updateTask(id, {
+        const parsed = parseTaskIdArg(rawId);
+        if (!parsed.ok) return printError(presentCliError(parsed.error));
+        const result = container.taskService.updateTask(parsed.value, {
           name: opts.name,
           description: opts.description,
           type: opts.type,
@@ -47,7 +51,7 @@ export function registerTaskUpdate(parent: Command, container: Container): void 
           appendNotes: opts.appendNotes,
           appendRequirements: opts.appendRequirements,
         });
-        handleResult(result);
+        handleResult(result, presentTaskServiceError);
       },
     );
 }

@@ -1,9 +1,6 @@
-import type { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { SqliteProjectRepository } from '../repository/project.repository.js';
-import { SqliteTaskRepository } from '../repository/task.repository.js';
-import { SqliteDependencyRepository } from '../repository/dependency.repository.js';
+import type { RepositorySet } from '../repository/repository-set.js';
 import { ProjectServiceImpl } from '../service/project.service.js';
 import type { DetectGitRemoteFn } from '../service/project.service.js';
 import { TaskServiceImpl } from '../service/task.service.js';
@@ -19,6 +16,7 @@ import type { UpdateService } from '../service/update.service.js';
 import type { AnalyticService } from '../service/analytic.service.js';
 
 export interface Container {
+  repos: RepositorySet;
   dbPath: string;
   updateCachePath: string;
   dismissedGitRemotesPath: string;
@@ -30,29 +28,32 @@ export interface Container {
   analyticService: AnalyticService;
 }
 
+export interface CreateContainerOptions {
+  dbPath?: string;
+  detectGitRemote?: DetectGitRemoteFn;
+  updateCachePath?: string;
+  dismissedGitRemotesPath?: string;
+}
+
 export function createContainer(
-  db: DatabaseSync,
-  dbPath: string,
-  detectGitRemote?: DetectGitRemoteFn,
-  updateCachePath?: string,
-  dismissedGitRemotesPath?: string,
+  repos: RepositorySet,
+  options: CreateContainerOptions = {},
 ): Container {
-  const projectRepo = new SqliteProjectRepository(db);
-  const taskRepo = new SqliteTaskRepository(db);
-  const depRepo = new SqliteDependencyRepository(db);
-  const projectService = new ProjectServiceImpl(projectRepo, detectGitRemote);
-  const dependencyService = new DependencyServiceImpl(depRepo, taskRepo);
-  const taskService = new TaskServiceImpl(taskRepo, projectService, () => dependencyService);
+  const projectService = new ProjectServiceImpl(repos.projects, options.detectGitRemote);
+  const dependencyService = new DependencyServiceImpl(repos.dependencies, repos.tasks);
+  const taskService = new TaskServiceImpl(repos.tasks, projectService, () => dependencyService);
   const portabilityService = new PortabilityServiceImpl(taskService, dependencyService);
-  const resolvedUpdateCachePath = updateCachePath ?? join(tmpdir(), 'tayto-update-check.json');
+  const resolvedUpdateCachePath =
+    options.updateCachePath ?? join(tmpdir(), 'tayto-update-check.json');
   const updateService = new UpdateServiceImpl(resolvedUpdateCachePath);
-  const analyticService = new AnalyticServiceImpl(taskRepo);
+  const analyticService = new AnalyticServiceImpl(repos.tasks);
 
   return {
-    dbPath,
+    repos,
+    dbPath: options.dbPath ?? '',
     updateCachePath: resolvedUpdateCachePath,
     dismissedGitRemotesPath:
-      dismissedGitRemotesPath ?? join(tmpdir(), 'tayto-dismissed-git-remotes.json'),
+      options.dismissedGitRemotesPath ?? join(tmpdir(), 'tayto-dismissed-git-remotes.json'),
     projectService,
     taskService,
     dependencyService,

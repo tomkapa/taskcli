@@ -3,6 +3,7 @@ import { Box, Text, useInput, useStdin } from 'ink';
 import { TaskStatus, TaskType } from '../../types/enums.js';
 import type { Task } from '../../types/task.js';
 import type { DependencyEntry } from '../../types/task.js';
+import type { TaskId } from '../../types/branded.js';
 import { theme } from '../theme.js';
 import { STATUS_VALUES, TYPE_VALUES, DEP_TYPE_LABEL } from '../constants.js';
 import { openInEditor } from '../editor.js';
@@ -221,7 +222,7 @@ export function TaskForm({ editingTask, allTasks, initialDeps, onSave, onCancel 
 
   // When picker is open, render it instead of the form
   if (pickerActive) {
-    const pickerExclude: { excludeIds?: Set<string> } = editingTask
+    const pickerExclude: { excludeIds?: Set<TaskId> } = editingTask
       ? { excludeIds: new Set([editingTask.id]) }
       : {};
     return (

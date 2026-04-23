@@ -1,8 +1,17 @@
 import type { Result } from '../types/common.js';
 import { ok, err } from '../types/common.js';
-import { AppError } from '../errors/app-error.js';
 
 export type Milliseconds = number;
+
+/**
+ * Narrow tagged error returned by `parseDuration`. Callers translate this
+ * into their module's error union.
+ */
+export interface DurationParseError {
+  readonly kind: 'validation';
+  readonly detail: string;
+  readonly message: string;
+}
 
 type DurationUnit = 'm' | 'h' | 'd' | 'w';
 
@@ -15,18 +24,26 @@ const UNIT_MS: Record<DurationUnit, number> = {
 
 const MAX_MS = 365 * 24 * 60 * 60 * 1000;
 
-export function parseDuration(input: string): Result<Milliseconds> {
+function validation(detail: string): DurationParseError {
+  return { kind: 'validation', detail, message: detail };
+}
+
+export function parseDuration(input: string): Result<Milliseconds, DurationParseError> {
   const match = /^(\d+)([mhdw])$/.exec(input);
   if (!match) {
-    return err(new AppError('VALIDATION', `Invalid duration: "${input}". Format: <positive integer><unit> where unit ∈ m|h|d|w`));
+    return err(
+      validation(
+        `Invalid duration: "${input}". Format: <positive integer><unit> where unit ∈ m|h|d|w`,
+      ),
+    );
   }
   const value = parseInt(match[1] as string, 10);
   if (value === 0) {
-    return err(new AppError('VALIDATION', `Duration must be positive: "${input}"`));
+    return err(validation(`Duration must be positive: "${input}"`));
   }
   const ms = value * UNIT_MS[match[2] as DurationUnit];
   if (ms > MAX_MS) {
-    return err(new AppError('VALIDATION', `Duration "${input}" exceeds the maximum of 365 days`));
+    return err(validation(`Duration "${input}" exceeds the maximum of 365 days`));
   }
   return ok(ms);
 }

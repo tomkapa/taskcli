@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import type { Container } from '../container.js';
 import { printSuccess, printError } from '../output.js';
 import { APP_VERSION } from '../../version.js';
+import { presentUpdateServiceError } from '../../service/errors.js';
 
 export function registerUpgrade(program: Command, container: Container): void {
   program
@@ -10,7 +11,7 @@ export function registerUpgrade(program: Command, container: Container): void {
     .action(async () => {
       const checkResult = await container.updateService.checkForUpdate(APP_VERSION);
       if (!checkResult.ok) {
-        printError(checkResult.error);
+        printError(presentUpdateServiceError(checkResult.error));
         return;
       }
 
@@ -28,7 +29,7 @@ export function registerUpgrade(program: Command, container: Container): void {
 
       const upgradeResult = container.updateService.performUpgrade(APP_VERSION);
       if (!upgradeResult.ok) {
-        printError(upgradeResult.error);
+        printError(presentUpdateServiceError(upgradeResult.error));
         return;
       }
 

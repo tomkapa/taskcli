@@ -5,8 +5,8 @@ import { initTelemetry, shutdownTelemetry } from './logging/telemetry.js';
 import { logger } from './logging/logger.js';
 import { createContainer } from './cli/container.js';
 import type { Container } from './cli/container.js';
+import { createSqliteRepositorySet } from './repository/index.js';
 import { buildCLI } from './cli/index.js';
-import { AppError } from './errors/app-error.js';
 import { APP_VERSION } from './version.js';
 import type { UpdateCheckResult } from './service/update.service.js';
 import { maybeSendHeartbeat } from './telemetry/heartbeat.js';
@@ -46,13 +46,12 @@ async function main(): Promise<void> {
   const db = createDatabase(config.dbPath);
   runMigrations(db);
 
-  const container = createContainer(
-    db,
-    config.dbPath,
-    undefined,
-    config.updateCachePath,
-    config.dismissedGitRemotesPath,
-  );
+  const repos = createSqliteRepositorySet(db);
+  const container = createContainer(repos, {
+    dbPath: config.dbPath,
+    updateCachePath: config.updateCachePath,
+    dismissedGitRemotesPath: config.dismissedGitRemotesPath,
+  });
 
   const args = process.argv.slice(2);
   const isUpgradeCommand = args[0] === 'upgrade';
@@ -84,14 +83,11 @@ async function main(): Promise<void> {
 }
 
 main().catch((e: unknown) => {
-  const error =
-    e instanceof AppError
-      ? e
-      : new AppError('UNKNOWN', e instanceof Error ? e.message : 'Unknown error', e);
-
+  // Top-level crash handler: assertion failures and unexpected rejections
+  // land here. Present a best-effort `{code, message}` and exit non-zero.
+  const message = e instanceof Error ? e.message : 'Unknown error';
   process.stderr.write(
-    JSON.stringify({ ok: false, error: { code: error.code, message: error.message } }, null, 2) +
-      '\n',
+    JSON.stringify({ ok: false, error: { code: 'UNKNOWN', message } }, null, 2) + '\n',
   );
   process.exit(1);
 });

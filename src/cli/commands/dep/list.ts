@@ -1,6 +1,11 @@
 import { Command } from 'commander';
 import type { Container } from '../../container.js';
-import { handleResult } from '../../output.js';
+import { handleResult, printError } from '../../output.js';
+import { parseTaskIdArg } from '../../helpers/ids.js';
+import {
+  presentCliError,
+  presentDependencyServiceError,
+} from '../../../service/errors.js';
 
 export function registerDepList(parent: Command, container: Container): void {
   parent
@@ -11,18 +16,32 @@ export function registerDepList(parent: Command, container: Container): void {
     .option('--transitive', 'Show all transitive blockers (deep)')
     .action(
       (
-        taskId: string,
+        rawTaskId: string,
         opts: { blockers?: boolean; dependents?: boolean; transitive?: boolean },
       ) => {
+        const parsed = parseTaskIdArg(rawTaskId);
+        if (!parsed.ok) return printError(presentCliError(parsed.error));
+        const id = parsed.value;
         if (opts.transitive) {
-          handleResult(container.dependencyService.getTransitiveDeps(taskId));
+          handleResult(
+            container.dependencyService.getTransitiveDeps(id),
+            presentDependencyServiceError,
+          );
         } else if (opts.dependents) {
-          handleResult(container.dependencyService.listDependents(taskId));
+          handleResult(
+            container.dependencyService.listDependents(id),
+            presentDependencyServiceError,
+          );
         } else if (opts.blockers) {
-          handleResult(container.dependencyService.listBlockers(taskId));
+          handleResult(
+            container.dependencyService.listBlockers(id),
+            presentDependencyServiceError,
+          );
         } else {
-          // Default: show all dependency edges
-          handleResult(container.dependencyService.listAllDeps(taskId));
+          handleResult(
+            container.dependencyService.listAllDeps(id),
+            presentDependencyServiceError,
+          );
         }
       },
     );

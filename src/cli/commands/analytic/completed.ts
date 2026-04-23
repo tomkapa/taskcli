@@ -2,6 +2,10 @@ import { Command } from 'commander';
 import type { Container } from '../../container.js';
 import { handleResult, printError } from '../../output.js';
 import { withProject } from '../../helpers/project.js';
+import {
+  presentAnalyticServiceError,
+  presentProjectServiceError,
+} from '../../../service/errors.js';
 
 export function registerAnalyticCompleted(parent: Command, container: Container): void {
   parent
@@ -11,7 +15,10 @@ export function registerAnalyticCompleted(parent: Command, container: Container)
     .requiredOption('--since <duration>', 'Window length, e.g. 24h, 7d, 2w')
     .action((opts: { project?: string; since: string }) => {
       const proj = withProject(container, opts.project);
-      if (!proj.ok) return printError(proj.error);
-      handleResult(container.analyticService.listCompleted({ since: opts.since }, proj.value));
+      if (!proj.ok) return printError(presentProjectServiceError(proj.error));
+      handleResult(
+        container.analyticService.listCompleted({ since: opts.since }, proj.value),
+        presentAnalyticServiceError,
+      );
     });
 }

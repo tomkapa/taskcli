@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { createContainer } from '../../src/cli/container.js';
+import { createSqliteRepositorySet } from '../../src/repository/index.js';
 import { runMigrations } from '../../src/db/migrator.js';
 import type { Container } from '../../src/cli/container.js';
 import type { Project } from '../../src/types/project.js';
 import { DependencyType } from '../../src/types/enums.js';
+import { presentDependencyServiceError } from '../../src/service/errors.js';
 
 let container: Container;
 let project: Project;
@@ -14,7 +16,7 @@ beforeEach(() => {
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
   runMigrations(db);
-  container = createContainer(db);
+  container = createContainer(createSqliteRepositorySet(db));
   container.projectService.createProject({ name: 'Proj', isDefault: true });
   const p = container.projectService.resolveProject();
   if (!p.ok) throw new Error('setup failed');
@@ -95,7 +97,7 @@ describe('DependencyService', () => {
       });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('DUPLICATE');
+      expect(presentDependencyServiceError(result.error).code).toBe('DUPLICATE');
     });
   });
 
@@ -111,7 +113,7 @@ describe('DependencyService', () => {
       });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('VALIDATION');
+      expect(presentDependencyServiceError(result.error).code).toBe('VALIDATION');
     });
 
     it('rejects duplicate dependency', () => {
@@ -125,19 +127,20 @@ describe('DependencyService', () => {
       });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('DUPLICATE');
+      expect(presentDependencyServiceError(result.error).code).toBe('DUPLICATE');
     });
 
     it('returns NOT_FOUND when taskId does not exist', () => {
       const t1 = createTask('Task 1');
 
+      // Valid TaskId format but not present in DB.
       const result = container.dependencyService.addDependency({
-        taskId: 'nonexistent',
+        taskId: 'PROJ-999',
         dependsOnId: t1,
       });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('NOT_FOUND');
+      expect(presentDependencyServiceError(result.error).code).toBe('NOT_FOUND');
     });
 
     it('returns NOT_FOUND when dependsOnId does not exist', () => {
@@ -145,11 +148,11 @@ describe('DependencyService', () => {
 
       const result = container.dependencyService.addDependency({
         taskId: t1,
-        dependsOnId: 'nonexistent',
+        dependsOnId: 'PROJ-999',
       });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('NOT_FOUND');
+      expect(presentDependencyServiceError(result.error).code).toBe('NOT_FOUND');
     });
 
     it('returns VALIDATION when taskId is empty', () => {
@@ -159,7 +162,7 @@ describe('DependencyService', () => {
       });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('VALIDATION');
+      expect(presentDependencyServiceError(result.error).code).toBe('VALIDATION');
     });
 
     it('returns VALIDATION when dependsOnId is empty', () => {
@@ -169,7 +172,7 @@ describe('DependencyService', () => {
       });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('VALIDATION');
+      expect(presentDependencyServiceError(result.error).code).toBe('VALIDATION');
     });
 
     it('returns VALIDATION for invalid dependency type', () => {
@@ -183,7 +186,7 @@ describe('DependencyService', () => {
       });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('VALIDATION');
+      expect(presentDependencyServiceError(result.error).code).toBe('VALIDATION');
     });
   });
 
@@ -201,7 +204,7 @@ describe('DependencyService', () => {
       });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('VALIDATION');
+      expect(presentDependencyServiceError(result.error).code).toBe('VALIDATION');
       expect(result.error.message).toContain('cycle');
     });
 
@@ -218,7 +221,7 @@ describe('DependencyService', () => {
       });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('VALIDATION');
+      expect(presentDependencyServiceError(result.error).code).toBe('VALIDATION');
       expect(result.error.message).toContain('cycle');
     });
 
@@ -237,7 +240,7 @@ describe('DependencyService', () => {
       });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('VALIDATION');
+      expect(presentDependencyServiceError(result.error).code).toBe('VALIDATION');
       expect(result.error.message).toContain('cycle');
     });
 
@@ -294,7 +297,7 @@ describe('DependencyService', () => {
       });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('VALIDATION');
+      expect(presentDependencyServiceError(result.error).code).toBe('VALIDATION');
       expect(result.error.message).toContain('cycle');
     });
 
@@ -312,7 +315,7 @@ describe('DependencyService', () => {
       });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('VALIDATION');
+      expect(presentDependencyServiceError(result.error).code).toBe('VALIDATION');
       expect(result.error.message).toContain('cycle');
     });
   });
@@ -347,7 +350,7 @@ describe('DependencyService', () => {
       });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('NOT_FOUND');
+      expect(presentDependencyServiceError(result.error).code).toBe('NOT_FOUND');
     });
 
     it('returns VALIDATION when taskId is empty', () => {
@@ -357,7 +360,7 @@ describe('DependencyService', () => {
       });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('VALIDATION');
+      expect(presentDependencyServiceError(result.error).code).toBe('VALIDATION');
     });
 
     it('returns VALIDATION when dependsOnId is empty', () => {
@@ -367,7 +370,7 @@ describe('DependencyService', () => {
       });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('VALIDATION');
+      expect(presentDependencyServiceError(result.error).code).toBe('VALIDATION');
     });
 
     it('only removes the specified edge, leaving others intact', () => {
@@ -745,7 +748,7 @@ describe('DependencyService', () => {
       const result = container.dependencyService.buildGraph('nonexistent');
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('NOT_FOUND');
+      expect(presentDependencyServiceError(result.error).code).toBe('NOT_FOUND');
     });
 
     it('returns graph with single node when task has no dependencies', () => {

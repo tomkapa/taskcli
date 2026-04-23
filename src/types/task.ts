@@ -1,12 +1,14 @@
 import { z } from 'zod/v4';
 import { TaskStatus, TaskType, DependencyType, UIDependencyType } from './enums.js';
+import type { TaskId, ProjectId } from './branded.js';
+import { taskIdField, projectIdField } from './id-fields.js';
 
 const taskStatusValues = Object.values(TaskStatus) as [string, ...string[]];
 const taskTypeValues = Object.values(TaskType) as [string, ...string[]];
 const uiDepTypeValues = Object.values(UIDependencyType) as [string, ...string[]];
 
 const DependencyEntrySchema = z.object({
-  id: z.string().min(1),
+  id: taskIdField,
   type: z.enum(uiDepTypeValues).default(DependencyType.Blocks),
 });
 export type DependencyEntry = z.infer<typeof DependencyEntrySchema>;
@@ -16,8 +18,8 @@ export const CreateTaskSchema = z.object({
   description: z.string().max(10000).optional(),
   type: z.enum(taskTypeValues).default(TaskType.Story),
   status: z.enum(taskStatusValues).default(TaskStatus.Backlog),
-  projectId: z.string().optional(),
-  parentId: z.string().optional(),
+  projectId: projectIdField.optional(),
+  parentId: taskIdField.optional(),
   technicalNotes: z.string().max(50000).optional(),
   additionalRequirements: z.string().max(50000).optional(),
   dependsOn: z.array(DependencyEntrySchema).optional(),
@@ -29,7 +31,7 @@ export const UpdateTaskSchema = z.object({
   description: z.string().max(10000).optional(),
   type: z.enum(taskTypeValues).optional(),
   status: z.enum(taskStatusValues).optional(),
-  parentId: z.string().nullable().optional(),
+  parentId: taskIdField.nullable().optional(),
   technicalNotes: z.string().max(50000).optional(),
   additionalRequirements: z.string().max(50000).optional(),
   appendNotes: z.string().max(50000).optional(),
@@ -41,17 +43,17 @@ export const TaskFilterSchema = z.object({
   status: z.enum(taskStatusValues).optional(),
   type: z.enum(taskTypeValues).optional(),
   level: z.number().int().min(1).max(2).optional(),
-  parentId: z.string().optional(),
+  parentId: taskIdField.optional(),
   /** Multi-select filter: show tasks whose parentId is in this list. */
-  parentIds: z.array(z.string()).optional(),
+  parentIds: z.array(taskIdField).optional(),
   search: z.string().optional(),
 });
-export type TaskFilter = z.infer<typeof TaskFilterSchema> & { projectId?: string };
+export type TaskFilter = z.infer<typeof TaskFilterSchema> & { projectId?: ProjectId };
 
 export const RerankTaskSchema = z.object({
-  taskId: z.string().min(1, 'Task id is required'),
-  afterId: z.string().optional(),
-  beforeId: z.string().optional(),
+  taskId: taskIdField,
+  afterId: taskIdField.optional(),
+  beforeId: taskIdField.optional(),
   position: z.number().int().min(1).optional(),
   /** Move to the top of active tasks (highest priority). */
   top: z.boolean().optional(),
@@ -61,9 +63,9 @@ export const RerankTaskSchema = z.object({
 export type RerankTaskInput = z.infer<typeof RerankTaskSchema>;
 
 export interface Task {
-  id: string;
-  projectId: string;
-  parentId: string | null;
+  id: TaskId;
+  projectId: ProjectId;
+  parentId: TaskId | null;
   name: string;
   description: string;
   type: TaskType;

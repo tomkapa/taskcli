@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { presentUpdateServiceError } from '../../src/service/errors.js';
 import { tmpdir } from 'node:os';
 import { UpdateServiceImpl, isNewerVersion } from '../../src/service/update.service.js';
 import type { FetchFn, ExecFn } from '../../src/service/update.service.js';
@@ -120,7 +121,7 @@ describe('UpdateServiceImpl.checkForUpdate', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('UPGRADE_CHECK');
+    expect(presentUpdateServiceError(result.error).code).toBe('UPGRADE_CHECK');
     expect(result.error.message).toContain('network error');
   });
 
@@ -134,7 +135,7 @@ describe('UpdateServiceImpl.checkForUpdate', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('UPGRADE_CHECK');
+    expect(presentUpdateServiceError(result.error).code).toBe('UPGRADE_CHECK');
     expect(result.error.message).toContain('404');
   });
 
@@ -148,7 +149,7 @@ describe('UpdateServiceImpl.checkForUpdate', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('UPGRADE_CHECK');
+    expect(presentUpdateServiceError(result.error).code).toBe('UPGRADE_CHECK');
     expect(result.error.message).toContain('Unexpected response');
   });
 
@@ -240,7 +241,7 @@ describe('UpdateServiceImpl.performUpgrade', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('UPGRADE_CHECK');
+    expect(presentUpdateServiceError(result.error).code).toBe('UPGRADE_CHECK');
     expect(result.error.message).toContain('npm not found');
   });
 

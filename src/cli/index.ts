@@ -60,7 +60,9 @@ export function buildCLI(container: Container): Command {
   registerDepList(dep, container);
   registerDepGraph(dep, container);
 
-  const analytic = program.command('analytic').description('Analytic queries for productivity reporting');
+  const analytic = program
+    .command('analytic')
+    .description('Analytic queries for productivity reporting');
   registerAnalyticSummary(analytic, container);
   registerAnalyticCompleted(analytic, container);
 

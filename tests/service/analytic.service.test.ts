@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { createContainer } from '../../src/cli/container.js';
+import { presentAnalyticServiceError } from '../../src/service/errors.js';
+import { createSqliteRepositorySet } from '../../src/repository/index.js';
 import { runMigrations } from '../../src/db/migrator.js';
 import type { Container } from '../../src/cli/container.js';
 import type { Project } from '../../src/types/project.js';
@@ -14,7 +16,7 @@ beforeEach(() => {
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
   runMigrations(db);
-  container = createContainer(db);
+  container = createContainer(createSqliteRepositorySet(db));
   container.projectService.createProject({ name: 'Test', isDefault: true });
   const p = container.projectService.resolveProject();
   if (!p.ok) throw new Error('setup failed');
@@ -151,7 +153,7 @@ describe('AnalyticService.summary', () => {
     const result = container.analyticService.summary({ period: 'month' }, project);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('VALIDATION');
+    expect(presentAnalyticServiceError(result.error).code).toBe('VALIDATION');
   });
 });
 
@@ -191,34 +193,34 @@ describe('AnalyticService.listCompleted', () => {
     const result = container.analyticService.listCompleted({ since: '' }, project);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('VALIDATION');
+    expect(presentAnalyticServiceError(result.error).code).toBe('VALIDATION');
   });
 
   it('rejects invalid duration format', () => {
     const result = container.analyticService.listCompleted({ since: '5' }, project);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('VALIDATION');
+    expect(presentAnalyticServiceError(result.error).code).toBe('VALIDATION');
   });
 
   it('rejects unsupported unit', () => {
     const result = container.analyticService.listCompleted({ since: '5x' }, project);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('VALIDATION');
+    expect(presentAnalyticServiceError(result.error).code).toBe('VALIDATION');
   });
 
   it('rejects negative duration', () => {
     const result = container.analyticService.listCompleted({ since: '-1d' }, project);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('VALIDATION');
+    expect(presentAnalyticServiceError(result.error).code).toBe('VALIDATION');
   });
 
   it('rejects duration over 365 days', () => {
     const result = container.analyticService.listCompleted({ since: '500d' }, project);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('VALIDATION');
+    expect(presentAnalyticServiceError(result.error).code).toBe('VALIDATION');
   });
 });

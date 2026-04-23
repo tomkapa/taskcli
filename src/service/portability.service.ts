@@ -8,11 +8,13 @@ import type {
   ImportResult,
 } from '../types/portability.js';
 import { ImportFileSchema } from '../types/portability.js';
+import type { TaskId } from '../types/branded.js';
 import type { TaskService } from './task.service.js';
 import type { DependencyService } from './dependency.service.js';
 import type { Project } from '../types/project.js';
-import { AppError } from '../errors/app-error.js';
 import { logger } from '../logging/logger.js';
+import type { PortabilityServiceError } from './errors.js';
+import { PortabilityErr } from './errors.js';
 
 // ── Internal mapped types ─────────────────────────────────────────────
 
@@ -36,12 +38,12 @@ interface MappedDependency {
 // ── Service interface ─────────────────────────────────────────────────
 
 export interface PortabilityService {
-  exportTasks(project: Project): Result<ExportData>;
+  exportTasks(project: Project): Result<ExportData, PortabilityServiceError>;
   importTasks(
     fileData: unknown,
     project: Project,
     fieldMapping?: FieldMapping,
-  ): Result<ImportResult>;
+  ): Result<ImportResult, PortabilityServiceError>;
 }
 
 // ── Implementation ────────────────────────────────────────────────────
@@ -52,10 +54,10 @@ export class PortabilityServiceImpl implements PortabilityService {
     private readonly depService: DependencyService,
   ) {}
 
-  exportTasks(project: Project): Result<ExportData> {
+  exportTasks(project: Project): Result<ExportData, PortabilityServiceError> {
     return logger.startSpan('PortabilityService.exportTasks', () => {
       const tasksResult = this.taskService.listTasks(project, {});
-      if (!tasksResult.ok) return tasksResult;
+      if (!tasksResult.ok) return err(PortabilityErr.taskService(tasksResult.error));
       const tasks = tasksResult.value;
 
       const taskIds = new Set(tasks.map((t) => t.id));
@@ -76,7 +78,7 @@ export class PortabilityServiceImpl implements PortabilityService {
       const allDeps: ExportDependency[] = [];
       for (const task of tasks) {
         const depsResult = this.depService.listAllDeps(task.id);
-        if (!depsResult.ok) return depsResult;
+        if (!depsResult.ok) return err(PortabilityErr.depService(depsResult.error));
         for (const dep of depsResult.value) {
           if (taskIds.has(dep.dependsOnId)) {
             allDeps.push({
@@ -107,18 +109,15 @@ export class PortabilityServiceImpl implements PortabilityService {
     fileData: unknown,
     project: Project,
     fieldMapping?: FieldMapping,
-  ): Result<ImportResult> {
+  ): Result<ImportResult, PortabilityServiceError> {
     return logger.startSpan('PortabilityService.importTasks', () => {
-      // 1. Validate input structure
       const parsed = ImportFileSchema.safeParse(fileData);
       if (!parsed.success) {
-        return err(new AppError('VALIDATION', parsed.error.message));
+        return err(PortabilityErr.validation(parsed.error.message));
       }
 
-      // 2. Build reverse map (ourField → sourceField)
       const reverseMap = this.buildReverseMap(fieldMapping);
 
-      // 3. Map source tasks to our schema
       const mappedTasks: MappedTask[] = [];
       for (const sourceTask of parsed.data.tasks) {
         const mapped = this.mapTaskFields(sourceTask, reverseMap);
@@ -126,7 +125,6 @@ export class PortabilityServiceImpl implements PortabilityService {
         mappedTasks.push(mapped.value);
       }
 
-      // 4. Map source dependencies
       const mappedDeps: MappedDependency[] = [];
       for (const sourceDep of parsed.data.dependencies) {
         const mapped = this.mapDependencyFields(sourceDep, reverseMap);
@@ -134,11 +132,11 @@ export class PortabilityServiceImpl implements PortabilityService {
         mappedDeps.push(mapped.value);
       }
 
-      // 5. Topological sort so parents are created before children
       const sorted = this.topoSortByParent(mappedTasks);
 
-      // 6. Create tasks, building sourceId → newId map
-      const idMap = new Map<string, string>();
+      // sourceId is foreign (from the import file); newId is our branded
+      // `TaskId`, returned from the repository on insert.
+      const idMap = new Map<string, TaskId>();
       for (const task of sorted) {
         let parentId: string | undefined;
         if (task.parentId) {
@@ -157,7 +155,7 @@ export class PortabilityServiceImpl implements PortabilityService {
           },
           project,
         );
-        if (!createResult.ok) return createResult;
+        if (!createResult.ok) return err(PortabilityErr.taskService(createResult.error));
 
         idMap.set(task.sourceId, createResult.value.id);
         logger.info('Imported task', {
@@ -166,7 +164,6 @@ export class PortabilityServiceImpl implements PortabilityService {
         });
       }
 
-      // 7. Add dependencies with remapped IDs
       let depCount = 0;
       for (const dep of mappedDeps) {
         const taskId = idMap.get(dep.sourceTaskId) ?? dep.sourceTaskId;
@@ -177,7 +174,7 @@ export class PortabilityServiceImpl implements PortabilityService {
           dependsOnId,
           type: dep.type || undefined,
         });
-        if (!depResult.ok) return depResult;
+        if (!depResult.ok) return err(PortabilityErr.depService(depResult.error));
 
         depCount++;
         logger.info('Imported dependency', { from: taskId, to: dependsOnId });
@@ -203,7 +200,6 @@ export class PortabilityServiceImpl implements PortabilityService {
 
   // ── Private helpers ───────────────────────────────────────────────
 
-  /** Invert the user-provided mapping (source→target) into (target→source). */
   private buildReverseMap(fieldMapping?: FieldMapping): Map<string, string> {
     const reverse = new Map<string, string>();
     if (!fieldMapping) return reverse;
@@ -213,7 +209,6 @@ export class PortabilityServiceImpl implements PortabilityService {
     return reverse;
   }
 
-  /** Read a field from a source object, checking reverse-mapped name first, then literal name. */
   private getField(
     source: Record<string, unknown>,
     field: string,
@@ -230,16 +225,18 @@ export class PortabilityServiceImpl implements PortabilityService {
   private mapTaskFields(
     source: Record<string, unknown>,
     reverseMap: Map<string, string>,
-  ): Result<MappedTask> {
+  ): Result<MappedTask, PortabilityServiceError> {
     const sourceId = this.getField(source, 'id', reverseMap);
     const name = this.getField(source, 'name', reverseMap);
 
     if (!sourceId) {
-      return err(new AppError('VALIDATION', 'Each imported task must have an id'));
+      return err(PortabilityErr.validation('Each imported task must have an id'));
     }
     if (!name) {
       return err(
-        new AppError('VALIDATION', `Imported task '${sourceId}' is missing required field 'name'`),
+        PortabilityErr.validation(
+          `Imported task '${sourceId}' is missing required field 'name'`,
+        ),
       );
     }
 
@@ -258,12 +255,12 @@ export class PortabilityServiceImpl implements PortabilityService {
   private mapDependencyFields(
     source: Record<string, unknown>,
     reverseMap: Map<string, string>,
-  ): Result<MappedDependency> {
+  ): Result<MappedDependency, PortabilityServiceError> {
     const taskId = this.getField(source, 'taskId', reverseMap);
     const dependsOnId = this.getField(source, 'dependsOnId', reverseMap);
 
     if (!taskId || !dependsOnId) {
-      return err(new AppError('VALIDATION', 'Each dependency must have taskId and dependsOnId'));
+      return err(PortabilityErr.validation('Each dependency must have taskId and dependsOnId'));
     }
 
     return ok({
@@ -274,7 +271,7 @@ export class PortabilityServiceImpl implements PortabilityService {
   }
 
   /**
-   * Sort tasks so that parents come before children within the import set.
+   * Sort tasks so parents come before children within the import set.
    * Tasks whose parentId is outside the import set are treated as roots.
    */
   private topoSortByParent(tasks: MappedTask[]): MappedTask[] {

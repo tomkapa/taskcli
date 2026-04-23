@@ -3,23 +3,30 @@ import { ok, err } from '../types/common.js';
 import type { Project } from '../types/project.js';
 import { CreateProjectSchema, UpdateProjectSchema } from '../types/project.js';
 import { GitRemote } from '../types/git-remote.js';
+import type { ProjectId, TaskId } from '../types/branded.js';
+import {
+  TaskId as TaskIdCtor,
+  ProjectId as ProjectIdCtor,
+  isParseError,
+} from '../types/branded.js';
 import type { ProjectRepository } from '../repository/project.repository.js';
-import { AppError } from '../errors/app-error.js';
 import { logger } from '../logging/logger.js';
 import { detectGitRemote as defaultDetectGitRemote } from '../utils/git.js';
+import type { ProjectServiceError } from './errors.js';
+import { ProjectErr, mapProjectRepo } from './errors.js';
 
-export type DetectGitRemoteFn = (cwd?: string) => Result<GitRemote | null>;
+export type DetectGitRemoteFn = (cwd?: string) => Result<GitRemote | null, never>;
 
 export interface ProjectService {
-  createProject(input: unknown): Result<Project>;
-  listProjects(): Result<Project[]>;
-  getProject(id: string): Result<Project>;
-  updateProject(id: string, input: unknown): Result<Project>;
-  deleteProject(id: string): Result<void>;
-  resolveProject(idOrName?: string, cwd?: string): Result<Project>;
-  linkGitRemote(idOrName: string, remote?: string): Result<Project>;
-  unlinkGitRemote(idOrName: string): Result<Project>;
-  nextTaskId(project: Project): Result<string>;
+  createProject(input: unknown): Result<Project, ProjectServiceError>;
+  listProjects(): Result<Project[], ProjectServiceError>;
+  getProject(id: ProjectId): Result<Project, ProjectServiceError>;
+  updateProject(id: ProjectId, input: unknown): Result<Project, ProjectServiceError>;
+  deleteProject(id: ProjectId): Result<void, ProjectServiceError>;
+  resolveProject(idOrName?: string, cwd?: string): Result<Project, ProjectServiceError>;
+  linkGitRemote(idOrName: string, remote?: string): Result<Project, ProjectServiceError>;
+  unlinkGitRemote(idOrName: string): Result<Project, ProjectServiceError>;
+  nextTaskId(project: Project): Result<TaskId, ProjectServiceError>;
 }
 
 export class ProjectServiceImpl implements ProjectService {
@@ -28,26 +35,26 @@ export class ProjectServiceImpl implements ProjectService {
     private readonly detectRemote: DetectGitRemoteFn = defaultDetectGitRemote,
   ) {}
 
-  createProject(input: unknown): Result<Project> {
+  createProject(input: unknown): Result<Project, ProjectServiceError> {
     return logger.startSpan('ProjectService.createProject', () => {
       const parsed = CreateProjectSchema.safeParse(input);
       if (!parsed.success) {
-        return err(new AppError('VALIDATION', parsed.error.message));
+        return err(ProjectErr.validation(parsed.error.message));
       }
 
       const key = parsed.data.key ?? this.generateKey(parsed.data.name);
       const keyError = this.validateKey(key);
       if (keyError) {
-        return err(new AppError('VALIDATION', keyError));
+        return err(ProjectErr.validation(keyError));
       }
 
-      const existingResult = this.repo.findByKey(key);
+      const existingResult = mapProjectRepo(this.repo.findByKey(key));
       if (!existingResult.ok) return existingResult;
       if (existingResult.value) {
-        return err(new AppError('DUPLICATE', `Project key already exists: ${key}`));
+        return err(ProjectErr.duplicate(key));
       }
 
-      return this.repo.insert({ ...parsed.data, key });
+      return mapProjectRepo(this.repo.insert({ ...parsed.data, key }));
     });
   }
 
@@ -68,57 +75,60 @@ export class ProjectServiceImpl implements ProjectService {
     return null;
   }
 
-  listProjects(): Result<Project[]> {
-    return this.repo.findAll();
+  listProjects(): Result<Project[], ProjectServiceError> {
+    return mapProjectRepo(this.repo.findAll());
   }
 
-  getProject(id: string): Result<Project> {
+  getProject(id: ProjectId): Result<Project, ProjectServiceError> {
     return logger.startSpan('ProjectService.getProject', () => {
-      const result = this.repo.findById(id);
+      const result = mapProjectRepo(this.repo.findById(id));
       if (!result.ok) return result;
       if (!result.value) {
-        return err(new AppError('NOT_FOUND', `Project not found: ${id}`));
+        return err(ProjectErr.notFound(id));
       }
       return ok(result.value);
     });
   }
 
-  updateProject(id: string, input: unknown): Result<Project> {
+  updateProject(id: ProjectId, input: unknown): Result<Project, ProjectServiceError> {
     return logger.startSpan('ProjectService.updateProject', () => {
       const parsed = UpdateProjectSchema.safeParse(input);
       if (!parsed.success) {
-        return err(new AppError('VALIDATION', parsed.error.message));
+        return err(ProjectErr.validation(parsed.error.message));
       }
-      return this.repo.update(id, parsed.data);
+      return mapProjectRepo(this.repo.update(id, parsed.data));
     });
   }
 
-  deleteProject(id: string): Result<void> {
-    return this.repo.delete(id);
+  deleteProject(id: ProjectId): Result<void, ProjectServiceError> {
+    return mapProjectRepo(this.repo.delete(id));
   }
 
-  resolveProject(idOrName?: string, cwd?: string): Result<Project> {
+  resolveProject(idOrName?: string, cwd?: string): Result<Project, ProjectServiceError> {
     return logger.startSpan('ProjectService.resolveProject', () => {
       if (idOrName) {
-        const byId = this.repo.findById(idOrName);
-        if (!byId.ok) return byId;
-        if (byId.value) return ok(byId.value);
+        const maybeId = ProjectIdCtor.parse(idOrName);
+        if (!isParseError(maybeId)) {
+          const byId = mapProjectRepo(this.repo.findById(maybeId));
+          if (!byId.ok) return byId;
+          if (byId.value) return ok(byId.value);
+        }
 
-        const byKey = this.repo.findByKey(idOrName.toUpperCase());
+        const byKey = mapProjectRepo(this.repo.findByKey(idOrName.toUpperCase()));
         if (!byKey.ok) return byKey;
         if (byKey.value) return ok(byKey.value);
 
-        const byName = this.repo.findByName(idOrName);
+        const byName = mapProjectRepo(this.repo.findByName(idOrName));
         if (!byName.ok) return byName;
         if (byName.value) return ok(byName.value);
 
-        return err(new AppError('NOT_FOUND', `Project not found: ${idOrName}`));
+        return err(ProjectErr.notFound(idOrName));
       }
 
       // Try git remote detection before falling back to default
       const remoteResult = this.detectRemote(cwd);
       if (remoteResult.ok && remoteResult.value) {
-        const byRemote = this.repo.findByGitRemote(remoteResult.value);
+        const byRemote = mapProjectRepo(this.repo.findByGitRemote(remoteResult.value));
         if (!byRemote.ok) return byRemote;
         if (byRemote.value) {
           logger.info(`resolveProject: matched git remote to project key=${byRemote.value.key}`);
@@ -126,20 +136,20 @@ export class ProjectServiceImpl implements ProjectService {
         }
       }
 
-      const defaultProject = this.repo.findDefault();
+      const defaultProject = mapProjectRepo(this.repo.findDefault());
       if (!defaultProject.ok) return defaultProject;
       if (defaultProject.value) return ok(defaultProject.value);
 
       return err(
-        new AppError(
-          'NOT_FOUND',
+        ProjectErr.notFound(
+          '',
           'No project specified and no default project set. Create a project first.',
         ),
       );
     });
   }
 
-  linkGitRemote(idOrName: string, remote?: string): Result<Project> {
+  linkGitRemote(idOrName: string, remote?: string): Result<Project, ProjectServiceError> {
     return logger.startSpan('ProjectService.linkGitRemote', () => {
       const resolved = this.resolveProject(idOrName);
       if (!resolved.ok) return resolved;
@@ -149,11 +159,10 @@ export class ProjectServiceImpl implements ProjectService {
         gitRemote = GitRemote.parse(remote);
       } else {
         const detected = this.detectRemote();
-        if (!detected.ok) return detected;
+        if (!detected.ok) return err(ProjectErr.gitRemoteMissing('Could not detect git remote'));
         if (!detected.value) {
           return err(
-            new AppError(
-              'NOT_FOUND',
+            ProjectErr.gitRemoteMissing(
               'No git remote detected in current directory. Use --remote <url> to specify one explicitly.',
             ),
           );
@@ -161,30 +170,33 @@ export class ProjectServiceImpl implements ProjectService {
         gitRemote = detected.value;
       }
 
-      return this.repo.update(resolved.value.id, { gitRemote });
+      return mapProjectRepo(this.repo.update(resolved.value.id, { gitRemote }));
     });
   }
 
-  unlinkGitRemote(idOrName: string): Result<Project> {
+  unlinkGitRemote(idOrName: string): Result<Project, ProjectServiceError> {
     return logger.startSpan('ProjectService.unlinkGitRemote', () => {
       const resolved = this.resolveProject(idOrName);
       if (!resolved.ok) return resolved;
 
       if (!resolved.value.gitRemote) {
         return err(
-          new AppError('NOT_FOUND', `Project "${resolved.value.name}" has no linked git remote.`),
+          ProjectErr.notFound(
+            resolved.value.name,
+            `Project "${resolved.value.name}" has no linked git remote.`,
+          ),
         );
       }
 
-      return this.repo.update(resolved.value.id, { gitRemote: null });
+      return mapProjectRepo(this.repo.update(resolved.value.id, { gitRemote: null }));
     });
   }
 
-  nextTaskId(project: Project): Result<string> {
+  nextTaskId(project: Project): Result<TaskId, ProjectServiceError> {
     return logger.startSpan('ProjectService.nextTaskId', () => {
-      const counterResult = this.repo.incrementTaskCounter(project.id);
+      const counterResult = mapProjectRepo(this.repo.incrementTaskCounter(project.id));
       if (!counterResult.ok) return counterResult;
-      return ok(`${project.key}-${counterResult.value}`);
+      return ok(TaskIdCtor.unsafe(`${project.key}-${counterResult.value}`));
     });
   }
 }

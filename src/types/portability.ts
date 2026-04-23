@@ -1,22 +1,23 @@
 import { z } from 'zod/v4';
+import type { TaskId } from './branded.js';
 
 // ── Export types ──────────────────────────────────────────────────────
 
 export interface ExportTask {
-  id: string;
+  id: TaskId;
   name: string;
   description: string;
   type: string;
   status: string;
-  parentId: string | null;
+  parentId: TaskId | null;
   technicalNotes: string;
   additionalRequirements: string;
   rank: number;
 }
 
 export interface ExportDependency {
-  taskId: string;
-  dependsOnId: string;
+  taskId: TaskId;
+  dependsOnId: TaskId;
   type: string;
 }
 

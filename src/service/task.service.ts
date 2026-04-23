@@ -8,10 +8,10 @@ import {
   RerankTaskSchema,
 } from '../types/task.js';
 import type { TaskRepository, SearchResult } from '../repository/task.repository.js';
+import type { TaskId } from '../types/branded.js';
 import type { ProjectService } from './project.service.js';
 import type { Project } from '../types/project.js';
 import type { DependencyService } from './dependency.service.js';
-import { AppError } from '../errors/app-error.js';
 import { logger } from '../logging/logger.js';
 import {
   TaskStatus,
@@ -21,16 +21,18 @@ import {
   getTaskLevel,
   midpoint,
 } from '../types/enums.js';
+import type { TaskServiceError } from './errors.js';
+import { TaskErr, mapTaskRepo } from './errors.js';
 
 export interface TaskService {
-  createTask(input: unknown, project: Project): Result<Task>;
-  getTask(id: string): Result<Task>;
-  listTasks(project: Project, filter: unknown): Result<Task[]>;
-  updateTask(id: string, input: unknown): Result<Task>;
-  deleteTask(id: string): Result<void>;
-  breakdownTask(parentId: string, subtasks: unknown[]): Result<Task[]>;
-  rerankTask(input: unknown, project: Project): Result<Task>;
-  searchTasks(query: string, project: Project): Result<SearchResult[]>;
+  createTask(input: unknown, project: Project): Result<Task, TaskServiceError>;
+  getTask(id: TaskId): Result<Task, TaskServiceError>;
+  listTasks(project: Project, filter: unknown): Result<Task[], TaskServiceError>;
+  updateTask(id: TaskId, input: unknown): Result<Task, TaskServiceError>;
+  deleteTask(id: TaskId): Result<void, TaskServiceError>;
+  breakdownTask(parentId: TaskId, subtasks: unknown[]): Result<Task[], TaskServiceError>;
+  rerankTask(input: unknown, project: Project): Result<Task, TaskServiceError>;
+  searchTasks(query: string, project: Project): Result<SearchResult[], TaskServiceError>;
 }
 
 export class TaskServiceImpl implements TaskService {
@@ -40,41 +42,43 @@ export class TaskServiceImpl implements TaskService {
     private readonly getDependencyService: () => DependencyService,
   ) {}
 
-  createTask(input: unknown, project: Project): Result<Task> {
+  createTask(input: unknown, project: Project): Result<Task, TaskServiceError> {
     return logger.startSpan('TaskService.createTask', () => {
       const parsed = CreateTaskSchema.safeParse(input);
       if (!parsed.success) {
-        return err(new AppError('VALIDATION', parsed.error.message));
+        return err(TaskErr.validation(parsed.error.message));
       }
 
       const taskLevel = getTaskLevel(parsed.data.type);
 
-      // Releases (level 1) cannot have a parent
       if (taskLevel === TaskLevel.Release && parsed.data.parentId) {
-        return err(new AppError('VALIDATION', 'Release tasks cannot have a parent'));
+        return err(TaskErr.validation('Release tasks cannot have a parent'));
       }
 
       if (parsed.data.parentId) {
-        const parentResult = this.repo.findById(parsed.data.parentId);
+        const parentResult = mapTaskRepo(this.repo.findById(parsed.data.parentId));
         if (!parentResult.ok) return parentResult;
         if (!parentResult.value) {
-          return err(new AppError('NOT_FOUND', `Parent task not found: ${parsed.data.parentId}`));
+          return err(TaskErr.notFound(parsed.data.parentId));
         }
-        // Level 2 tasks can only be children of level 1 (release) tasks
         if (getTaskLevel(parentResult.value.type) !== TaskLevel.Release) {
-          return err(
-            new AppError('VALIDATION', 'Tasks can only be children of release-level tasks'),
-          );
+          return err(TaskErr.validation('Tasks can only be children of release-level tasks'));
         }
       }
 
       const taskIdResult = this.projectService.nextTaskId(project);
-      if (!taskIdResult.ok) return taskIdResult;
+      if (!taskIdResult.ok) {
+        // Project-service failure at task creation — surface as repo-level
+        // failure for the caller (rare path; keeps the variant count low).
+        return err(TaskErr.validation(taskIdResult.error.message));
+      }
 
-      const insertResult = this.repo.insert(taskIdResult.value, {
-        ...parsed.data,
-        projectId: project.id,
-      });
+      const insertResult = mapTaskRepo(
+        this.repo.insert(taskIdResult.value, {
+          ...parsed.data,
+          projectId: project.id,
+        }),
+      );
       if (!insertResult.ok) return insertResult;
 
       if (parsed.data.dependsOn && parsed.data.dependsOn.length > 0) {
@@ -84,7 +88,7 @@ export class TaskServiceImpl implements TaskService {
             dependsOnId: entry.id,
             type: entry.type,
           });
-          if (!depResult.ok) return depResult;
+          if (!depResult.ok) return err(TaskErr.depFailed(depResult.error));
         }
       }
 
@@ -92,22 +96,22 @@ export class TaskServiceImpl implements TaskService {
     });
   }
 
-  getTask(id: string): Result<Task> {
+  getTask(id: TaskId): Result<Task, TaskServiceError> {
     return logger.startSpan('TaskService.getTask', () => {
-      const result = this.repo.findById(id);
+      const result = mapTaskRepo(this.repo.findById(id));
       if (!result.ok) return result;
       if (!result.value) {
-        return err(new AppError('NOT_FOUND', `Task not found: ${id}`));
+        return err(TaskErr.notFound(id));
       }
       return ok(result.value);
     });
   }
 
-  listTasks(project: Project, filter: unknown): Result<Task[]> {
+  listTasks(project: Project, filter: unknown): Result<Task[], TaskServiceError> {
     return logger.startSpan('TaskService.listTasks', () => {
       const parsed = TaskFilterSchema.safeParse(filter);
       if (!parsed.success) {
-        return err(new AppError('VALIDATION', parsed.error.message));
+        return err(TaskErr.validation(parsed.error.message));
       }
 
       const resolvedFilter: TaskFilter = {
@@ -115,100 +119,89 @@ export class TaskServiceImpl implements TaskService {
         projectId: project.id,
       };
 
-      return this.repo.findMany(resolvedFilter);
+      return mapTaskRepo(this.repo.findMany(resolvedFilter));
     });
   }
 
-  updateTask(id: string, input: unknown): Result<Task> {
+  updateTask(id: TaskId, input: unknown): Result<Task, TaskServiceError> {
     return logger.startSpan('TaskService.updateTask', () => {
       const parsed = UpdateTaskSchema.safeParse(input);
       if (!parsed.success) {
-        return err(new AppError('VALIDATION', parsed.error.message));
+        return err(TaskErr.validation(parsed.error.message));
       }
 
-      // Enforce: cannot start a task that still has unfinished blockers.
       if (parsed.data.status === TaskStatus.InProgress) {
         const blockersResult = this.getDependencyService().listBlockers(id);
-        if (!blockersResult.ok) return blockersResult;
+        if (!blockersResult.ok) return err(TaskErr.depFailed(blockersResult.error));
         const hasNonTerminalBlocker = blockersResult.value.some((b) => !isTerminalStatus(b.status));
         if (hasNonTerminalBlocker) {
-          return err(new AppError('VALIDATION', 'Task is blocked by unfinished dependencies'));
+          return err(TaskErr.validation('Task is blocked by unfinished dependencies'));
         }
       }
 
-      // Fetch existing task for level/status transition checks
-      const existingResult = this.repo.findById(id);
+      const existingResult = mapTaskRepo(this.repo.findById(id));
       if (!existingResult.ok) return existingResult;
       if (!existingResult.value) {
-        return err(new AppError('NOT_FOUND', `Task not found: ${id}`));
+        return err(TaskErr.notFound(id));
       }
       const existing = existingResult.value;
 
-      // Validate type change against level constraints
       if (parsed.data.type) {
         const newLevel = getTaskLevel(parsed.data.type);
         const oldLevel = getTaskLevel(existing.type);
 
         if (newLevel !== oldLevel) {
-          // Changing from release to work: reject if it has children
           if (oldLevel === TaskLevel.Release) {
-            const childrenResult = this.repo.findMany({
-              projectId: existing.projectId,
-              parentId: id,
-            });
+            const childrenResult = mapTaskRepo(
+              this.repo.findMany({
+                projectId: existing.projectId,
+                parentId: id,
+              }),
+            );
             if (childrenResult.ok && childrenResult.value.length > 0) {
               return err(
-                new AppError(
-                  'VALIDATION',
+                TaskErr.validation(
                   'Cannot change type from release: task has children. Remove children first.',
                 ),
               );
             }
           }
-          // Changing to release: reject if it has a parent
           if (newLevel === TaskLevel.Release && existing.parentId) {
-            return err(
-              new AppError('VALIDATION', 'Cannot change type to release: task has a parent'),
-            );
+            return err(TaskErr.validation('Cannot change type to release: task has a parent'));
           }
         }
       }
 
-      // Validate parentId change against level constraints
       if (parsed.data.parentId !== undefined) {
         const effectiveType = parsed.data.type ?? existing.type;
         const effectiveLevel = getTaskLevel(effectiveType);
 
         if (effectiveLevel === TaskLevel.Release && parsed.data.parentId) {
-          return err(new AppError('VALIDATION', 'Release tasks cannot have a parent'));
+          return err(TaskErr.validation('Release tasks cannot have a parent'));
         }
         if (parsed.data.parentId) {
-          const parentResult = this.repo.findById(parsed.data.parentId);
+          const parentResult = mapTaskRepo(this.repo.findById(parsed.data.parentId));
           if (!parentResult.ok) return parentResult;
           if (!parentResult.value) {
-            return err(new AppError('NOT_FOUND', `Parent task not found: ${parsed.data.parentId}`));
+            return err(TaskErr.notFound(parsed.data.parentId));
           }
           if (getTaskLevel(parentResult.value.type) !== TaskLevel.Release) {
-            return err(
-              new AppError('VALIDATION', 'Tasks can only be children of release-level tasks'),
-            );
+            return err(TaskErr.validation('Tasks can only be children of release-level tasks'));
           }
         }
       }
 
-      // Check if transitioning to terminal status (done/cancelled)
       if (parsed.data.status && isTerminalStatus(parsed.data.status)) {
         const effectiveType = parsed.data.type ?? existing.type;
         const level = getTaskLevel(effectiveType);
 
-        const updateResult = this.repo.update(id, parsed.data);
+        const updateResult = mapTaskRepo(this.repo.update(id, parsed.data));
         if (!updateResult.ok) return updateResult;
 
-        // Auto-rerank to bottom only when transitioning from active → terminal
         if (!isTerminalStatus(existing.status)) {
-          const maxRankResult = this.repo.getMaxRankByLevel(existing.projectId, level);
+          const maxRankResult = mapTaskRepo(this.repo.getMaxRankByLevel(existing.projectId, level));
           if (!maxRankResult.ok) return maxRankResult;
-          const rerankResult = this.repo.rerank(id, maxRankResult.value + RANK_GAP);
+          const rerankResult = mapTaskRepo(this.repo.rerank(id, maxRankResult.value + RANK_GAP));
           if (!rerankResult.ok) return rerankResult;
           this.propagateParentStatus(existing);
           return rerankResult;
@@ -217,10 +210,9 @@ export class TaskServiceImpl implements TaskService {
         return updateResult;
       }
 
-      const updateResult = this.repo.update(id, parsed.data);
+      const updateResult = mapTaskRepo(this.repo.update(id, parsed.data));
       if (!updateResult.ok) return updateResult;
 
-      // Propagate status to parent when transitioning to in-progress
       if (parsed.data.status && parsed.data.status !== existing.status) {
         this.propagateParentStatus(existing);
       }
@@ -229,27 +221,26 @@ export class TaskServiceImpl implements TaskService {
     });
   }
 
-  deleteTask(id: string): Result<void> {
-    return this.repo.delete(id);
+  deleteTask(id: TaskId): Result<void, TaskServiceError> {
+    return mapTaskRepo(this.repo.delete(id));
   }
 
-  breakdownTask(parentId: string, subtasks: unknown[]): Result<Task[]> {
+  breakdownTask(parentId: TaskId, subtasks: unknown[]): Result<Task[], TaskServiceError> {
     return logger.startSpan('TaskService.breakdownTask', () => {
-      const parentResult = this.repo.findById(parentId);
+      const parentResult = mapTaskRepo(this.repo.findById(parentId));
       if (!parentResult.ok) return parentResult;
       if (!parentResult.value) {
-        return err(new AppError('NOT_FOUND', `Parent task not found: ${parentId}`));
+        return err(TaskErr.notFound(parentId));
       }
 
       const parent = parentResult.value;
 
-      // Parent must be a release (level 1) to have children
       if (getTaskLevel(parent.type) !== TaskLevel.Release) {
-        return err(new AppError('VALIDATION', 'Breakdown parent must be a release-level task'));
+        return err(TaskErr.validation('Breakdown parent must be a release-level task'));
       }
 
       const projectResult = this.projectService.getProject(parent.projectId);
-      if (!projectResult.ok) return projectResult;
+      if (!projectResult.ok) return err(TaskErr.validation(projectResult.error.message));
       const project = projectResult.value;
 
       const created: Task[] = [];
@@ -257,24 +248,23 @@ export class TaskServiceImpl implements TaskService {
       for (const subtask of subtasks) {
         const parsed = CreateTaskSchema.safeParse(subtask);
         if (!parsed.success) {
-          return err(new AppError('VALIDATION', `Invalid subtask: ${parsed.error.message}`));
+          return err(TaskErr.validation(`Invalid subtask: ${parsed.error.message}`));
         }
 
-        // Subtasks must be level 2 (work items)
         if (getTaskLevel(parsed.data.type) === TaskLevel.Release) {
-          return err(
-            new AppError('VALIDATION', `Subtask "${parsed.data.name}" cannot be a release`),
-          );
+          return err(TaskErr.validation(`Subtask "${parsed.data.name}" cannot be a release`));
         }
 
         const taskIdResult = this.projectService.nextTaskId(project);
-        if (!taskIdResult.ok) return taskIdResult;
+        if (!taskIdResult.ok) return err(TaskErr.validation(taskIdResult.error.message));
 
-        const result = this.repo.insert(taskIdResult.value, {
-          ...parsed.data,
-          projectId: parent.projectId,
-          parentId,
-        });
+        const result = mapTaskRepo(
+          this.repo.insert(taskIdResult.value, {
+            ...parsed.data,
+            projectId: parent.projectId,
+            parentId,
+          }),
+        );
         if (!result.ok) return result;
         created.push(result.value);
       }
@@ -283,21 +273,11 @@ export class TaskServiceImpl implements TaskService {
     });
   }
 
-  /**
-   * Re-rank a task using Jira-style ranking:
-   * - afterId: place the task immediately after the given task
-   * - beforeId: place the task immediately before the given task
-   * - position: place the task at the given 1-based position in the backlog
-   *
-   * New rank is computed as the midpoint between neighbors.
-   * If moving to the top, rank = first_rank - GAP.
-   * If moving to the bottom, rank = last_rank + GAP.
-   */
-  rerankTask(input: unknown, project: Project): Result<Task> {
+  rerankTask(input: unknown, project: Project): Result<Task, TaskServiceError> {
     return logger.startSpan('TaskService.rerankTask', () => {
       const parsed = RerankTaskSchema.safeParse(input);
       if (!parsed.success) {
-        return err(new AppError('VALIDATION', parsed.error.message));
+        return err(TaskErr.validation(parsed.error.message));
       }
 
       const { taskId, afterId, beforeId, position, top, bottom } = parsed.data;
@@ -308,24 +288,22 @@ export class TaskServiceImpl implements TaskService {
         (bottom ? 1 : 0);
       if (specifiedCount !== 1) {
         return err(
-          new AppError(
-            'VALIDATION',
+          TaskErr.validation(
             'Exactly one of --after, --before, --position, --top, or --bottom must be specified',
           ),
         );
       }
 
-      const taskResult = this.repo.findById(taskId);
+      const taskResult = mapTaskRepo(this.repo.findById(taskId));
       if (!taskResult.ok) return taskResult;
       if (!taskResult.value) {
-        return err(new AppError('NOT_FOUND', `Task not found: ${taskId}`));
+        return err(TaskErr.notFound(taskId));
       }
       const task = taskResult.value;
 
       if (isTerminalStatus(task.status)) {
         return err(
-          new AppError(
-            'VALIDATION',
+          TaskErr.validation(
             `Cannot rerank a task with status '${task.status}'. Only active tasks can be reranked.`,
           ),
         );
@@ -335,24 +313,22 @@ export class TaskServiceImpl implements TaskService {
 
       const projectId = project.id;
 
-      // Filtering excludes terminal and cross-project tasks — neither
-      // participates in this rank space, so they cannot constrain it.
       const depService = this.getDependencyService();
       const blockersResult = depService.listBlockers(taskId);
-      if (!blockersResult.ok) return blockersResult;
+      if (!blockersResult.ok) return err(TaskErr.depFailed(blockersResult.error));
       const constrainingBlockers = blockersResult.value.filter(
         (b) => !isTerminalStatus(b.status) && b.projectId === projectId,
       );
       const dependentsResult = depService.listDependents(taskId);
-      if (!dependentsResult.ok) return dependentsResult;
+      if (!dependentsResult.ok) return err(TaskErr.depFailed(dependentsResult.error));
       const constrainingDependents = dependentsResult.value.filter(
         (d) => !isTerminalStatus(d.status) && d.projectId === projectId,
       );
 
-      // Returns `ok(null)` to signal FP precision collapse — the caller
-      // rebalances once and retries on a fresh snapshot.
-      const attempt = (): Result<number | null> => {
-        const rankedResult = this.repo.getRankedNonTerminalTasksByLevel(projectId, taskLevel);
+      const attempt = (): Result<number | null, TaskServiceError> => {
+        const rankedResult = mapTaskRepo(
+          this.repo.getRankedNonTerminalTasksByLevel(projectId, taskLevel),
+        );
         if (!rankedResult.ok) return rankedResult;
         const ranked = rankedResult.value.filter((t) => t.id !== taskId);
 
@@ -360,7 +336,9 @@ export class TaskServiceImpl implements TaskService {
           return ok(this.computeTopRank(ranked, constrainingBlockers));
         }
         if (bottom === true) {
-          const minTerminalResult = this.repo.getMinTerminalRankByLevel(projectId, taskLevel);
+          const minTerminalResult = mapTaskRepo(
+            this.repo.getMinTerminalRankByLevel(projectId, taskLevel),
+          );
           if (!minTerminalResult.ok) return minTerminalResult;
           return ok(
             this.computeBottomRank(ranked, minTerminalResult.value, constrainingDependents),
@@ -370,9 +348,7 @@ export class TaskServiceImpl implements TaskService {
           const anchorIndex = ranked.findIndex((t) => t.id === afterId);
           const anchor = ranked[anchorIndex];
           if (!anchor) {
-            return err(
-              new AppError('NOT_FOUND', `Anchor task not found among active tasks: ${afterId}`),
-            );
+            return err(TaskErr.notFound(afterId));
           }
           const next = ranked[anchorIndex + 1];
           return ok(next ? midpoint(anchor.rank, next.rank) : anchor.rank + RANK_GAP);
@@ -381,30 +357,29 @@ export class TaskServiceImpl implements TaskService {
           const anchorIndex = ranked.findIndex((t) => t.id === beforeId);
           const anchor = ranked[anchorIndex];
           if (!anchor) {
-            return err(
-              new AppError('NOT_FOUND', `Anchor task not found among active tasks: ${beforeId}`),
-            );
+            return err(TaskErr.notFound(beforeId));
           }
           const prev = ranked[anchorIndex - 1];
           return ok(prev ? midpoint(prev.rank, anchor.rank) : anchor.rank - RANK_GAP);
         }
-        // position is defined — guaranteed by the specifiedCount === 1 check above.
         const pos = position as number;
         if (pos < 1) {
-          return err(new AppError('VALIDATION', 'Position must be >= 1'));
+          return err(TaskErr.validation('Position must be >= 1'));
         }
         if (pos === 1) {
           return ok(this.computeTopRank(ranked));
         }
         if (pos > ranked.length) {
-          const minTerminalResult = this.repo.getMinTerminalRankByLevel(projectId, taskLevel);
+          const minTerminalResult = mapTaskRepo(
+            this.repo.getMinTerminalRankByLevel(projectId, taskLevel),
+          );
           if (!minTerminalResult.ok) return minTerminalResult;
           return ok(this.computeBottomRank(ranked, minTerminalResult.value));
         }
         const above = ranked[pos - 2];
         const below = ranked[pos - 1];
         if (!above || !below) {
-          return err(new AppError('DB_ERROR', 'Unexpected missing neighbor tasks'));
+          return err(TaskErr.validation('Unexpected missing neighbor tasks'));
         }
         return ok(midpoint(above.rank, below.rank));
       };
@@ -412,25 +387,20 @@ export class TaskServiceImpl implements TaskService {
       let computed = attempt();
       if (!computed.ok) return computed;
       if (computed.value === null) {
-        const rb = this.repo.rebalanceByLevel(projectId, taskLevel);
+        const rb = mapTaskRepo(this.repo.rebalanceByLevel(projectId, taskLevel));
         if (!rb.ok) return rb;
         computed = attempt();
         if (!computed.ok) return computed;
         if (computed.value === null) {
-          return err(new AppError('DB_ERROR', 'Rank computation did not converge after rebalance'));
+          return err(TaskErr.validation('Rank computation did not converge after rebalance'));
         }
       }
       const newRank = computed.value;
 
-      // Dependency constraint: a blocked task must not rank higher (lower number)
-      // than any of its blockers, and must not rank lower than any of its dependents.
-      // top/bottom clamp these constraints upstream, so this check should only
-      // trip for explicit --after/--before/--position requests.
       for (const blocker of constrainingBlockers) {
         if (newRank < blocker.rank) {
           return err(
-            new AppError(
-              'VALIDATION',
+            TaskErr.validation(
               `Cannot rank above blocker "${blocker.id}" (${blocker.name}). Complete or remove the dependency first.`,
             ),
           );
@@ -439,35 +409,27 @@ export class TaskServiceImpl implements TaskService {
       for (const dep of constrainingDependents) {
         if (newRank > dep.rank) {
           return err(
-            new AppError(
-              'VALIDATION',
+            TaskErr.validation(
               `Cannot rank below dependent "${dep.id}" (${dep.name}). Complete or remove the dependency first.`,
             ),
           );
         }
       }
 
-      return this.repo.rerank(taskId, newRank);
+      return mapTaskRepo(this.repo.rerank(taskId, newRank));
     });
   }
 
-  searchTasks(query: string, project: Project): Result<SearchResult[]> {
+  searchTasks(query: string, project: Project): Result<SearchResult[], TaskServiceError> {
     return logger.startSpan('TaskService.searchTasks', () => {
       if (!query.trim()) {
-        return err(new AppError('VALIDATION', 'Search query cannot be empty'));
+        return err(TaskErr.validation('Search query cannot be empty'));
       }
 
-      return this.repo.search(query, project.id);
+      return mapTaskRepo(this.repo.search(query, project.id));
     });
   }
 
-  /**
-   * Rank for placing a task at the top of the active list. Clamps to
-   * "immediately after the highest-ranked blocker" when blockers exist
-   * rather than returning a value that would fail validation.
-   *
-   * Returns `null` to signal FP precision collapse (caller rebalances).
-   */
   private computeTopRank(ranked: Task[], constrainingBlockers: Task[] = []): number | null {
     if (constrainingBlockers.length > 0) {
       const highestBlocker = constrainingBlockers.reduce((a, b) => (a.rank > b.rank ? a : b));
@@ -481,16 +443,6 @@ export class TaskServiceImpl implements TaskService {
     return first ? first.rank - RANK_GAP : RANK_GAP;
   }
 
-  /**
-   * Rank for placing a task at the bottom of the active list.
-   * - Stays above terminal tasks: terminal tasks live at `maxRank + RANK_GAP`
-   *   so a naive `last.rank + RANK_GAP` would collide with the most-recently
-   *   completed task.
-   * - Clamps above any dependents rather than failing validation.
-   *
-   * `minTerminal` is passed in so this helper stays pure (no DB access).
-   * Returns `null` to signal FP precision collapse.
-   */
   private computeBottomRank(
     ranked: Task[],
     minTerminal: number | null,
@@ -511,11 +463,7 @@ export class TaskServiceImpl implements TaskService {
       : last.rank + RANK_GAP;
   }
 
-  /**
-   * Auto-propagate status to the parent task after a child status change.
-   * - If a child moves to in-progress and parent is backlog/todo → parent becomes in-progress.
-   * - If all children are terminal (done/cancelled) → parent becomes done.
-   */
+  /** Best-effort parent status propagation; swallows repo errors. */
   private propagateParentStatus(child: Task): void {
     if (!child.parentId) return;
 
@@ -523,12 +471,10 @@ export class TaskServiceImpl implements TaskService {
     if (!parentResult.ok || !parentResult.value) return;
     const parent = parentResult.value;
 
-    // Re-read the child to get its current (post-update) status
     const updatedChildResult = this.repo.findById(child.id);
     if (!updatedChildResult.ok || !updatedChildResult.value) return;
     const updatedChild = updatedChildResult.value;
 
-    // Child moved to in-progress → promote parent from backlog/todo to in-progress
     if (
       updatedChild.status === TaskStatus.InProgress &&
       (parent.status === TaskStatus.Backlog || parent.status === TaskStatus.Todo)
@@ -537,7 +483,6 @@ export class TaskServiceImpl implements TaskService {
       return;
     }
 
-    // Child became terminal → check if ALL children are terminal → parent becomes done
     if (isTerminalStatus(updatedChild.status)) {
       const siblingsResult = this.repo.findMany({
         projectId: parent.projectId,

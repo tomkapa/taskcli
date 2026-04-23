@@ -5,13 +5,15 @@ import type { TaskDependency } from '../types/dependency.js';
 import { AddDependencySchema, RemoveDependencySchema } from '../types/dependency.js';
 import type { DependencyRepository } from '../repository/dependency.repository.js';
 import type { TaskRepository } from '../repository/task.repository.js';
-import { AppError } from '../errors/app-error.js';
 import { logger } from '../logging/logger.js';
 import { UIDependencyType, DependencyType } from '../types/enums.js';
+import type { TaskId } from '../types/branded.js';
+import type { DependencyServiceError } from './errors.js';
+import { DepErr, mapDepRepo } from './errors.js';
 
 export interface DependencyEdge {
-  from: string;
-  to: string;
+  from: TaskId;
+  to: TaskId;
   type: string;
 }
 
@@ -22,17 +24,20 @@ export interface DependencyGraph {
 }
 
 export interface DependencyService {
-  addDependency(input: unknown): Result<TaskDependency>;
-  removeDependency(input: unknown): Result<void>;
+  addDependency(input: unknown): Result<TaskDependency, DependencyServiceError>;
+  removeDependency(input: unknown): Result<void, DependencyServiceError>;
   /** Remove a dependency between two tasks regardless of which direction it was stored. */
-  removeDependencyBetween(taskId: string, otherId: string): Result<void>;
-  listBlockers(taskId: string): Result<Task[]>;
-  listDependents(taskId: string): Result<Task[]>;
-  listRelated(taskId: string): Result<Task[]>;
-  listDuplicates(taskId: string): Result<Task[]>;
-  listAllDeps(taskId: string): Result<TaskDependency[]>;
-  getTransitiveDeps(taskId: string): Result<Task[]>;
-  buildGraph(taskId: string): Result<DependencyGraph>;
+  removeDependencyBetween(
+    taskId: TaskId,
+    otherId: TaskId,
+  ): Result<void, DependencyServiceError>;
+  listBlockers(taskId: TaskId): Result<Task[], DependencyServiceError>;
+  listDependents(taskId: TaskId): Result<Task[], DependencyServiceError>;
+  listRelated(taskId: TaskId): Result<Task[], DependencyServiceError>;
+  listDuplicates(taskId: TaskId): Result<Task[], DependencyServiceError>;
+  listAllDeps(taskId: TaskId): Result<TaskDependency[], DependencyServiceError>;
+  getTransitiveDeps(taskId: TaskId): Result<Task[], DependencyServiceError>;
+  buildGraph(taskId: TaskId): Result<DependencyGraph, DependencyServiceError>;
 }
 
 export class DependencyServiceImpl implements DependencyService {
@@ -41,24 +46,21 @@ export class DependencyServiceImpl implements DependencyService {
     private readonly taskRepo: TaskRepository,
   ) {}
 
-  private requireTask(taskId: string): Result<Task> {
-    const result = this.taskRepo.findById(taskId);
+  private requireTask(taskId: TaskId): Result<Task, DependencyServiceError> {
+    const result = mapDepRepo(this.taskRepo.findById(taskId));
     if (!result.ok) return result;
     if (!result.value) {
-      return err(new AppError('NOT_FOUND', `Task not found: ${taskId}`));
+      return err(DepErr.taskNotFound(taskId));
     }
     return ok(result.value);
   }
 
-  addDependency(input: unknown): Result<TaskDependency> {
+  addDependency(input: unknown): Result<TaskDependency, DependencyServiceError> {
     return logger.startSpan('DependencyService.addDependency', () => {
-      // Normalize blocked-by: callers express "A is blocked-by B" as
-      // {taskId: A, dependsOnId: B, type: blocked-by}; we store it as
-      // {taskId: B, dependsOnId: A, type: blocks} (B blocks A).
       const normalized = normalizeBlockedBy(input);
       const parsed = AddDependencySchema.safeParse(normalized);
       if (!parsed.success) {
-        return err(new AppError('VALIDATION', parsed.error.message));
+        return err(DepErr.validation(parsed.error.message));
       }
 
       const { taskId, dependsOnId, type } = parsed.data;
@@ -69,89 +71,82 @@ export class DependencyServiceImpl implements DependencyService {
       const depResult = this.requireTask(dependsOnId);
       if (!depResult.ok) return depResult;
 
-      const cycleResult = this.depRepo.wouldCreateCycle(taskId, dependsOnId);
+      const cycleResult = mapDepRepo(this.depRepo.wouldCreateCycle(taskId, dependsOnId));
       if (!cycleResult.ok) return cycleResult;
       if (cycleResult.value) {
-        return err(
-          new AppError(
-            'VALIDATION',
-            `Adding this dependency would create a cycle: ${taskId} -> ${dependsOnId}`,
-          ),
-        );
+        return err(DepErr.cycle(taskId, dependsOnId));
       }
 
-      return this.depRepo.insert(taskId, dependsOnId, type);
+      return mapDepRepo(this.depRepo.insert(taskId, dependsOnId, type));
     });
   }
 
-  removeDependency(input: unknown): Result<void> {
+  removeDependency(input: unknown): Result<void, DependencyServiceError> {
     return logger.startSpan('DependencyService.removeDependency', () => {
       const parsed = RemoveDependencySchema.safeParse(input);
       if (!parsed.success) {
-        return err(new AppError('VALIDATION', parsed.error.message));
+        return err(DepErr.validation(parsed.error.message));
       }
-      return this.depRepo.delete(parsed.data.taskId, parsed.data.dependsOnId);
+      return mapDepRepo(this.depRepo.delete(parsed.data.taskId, parsed.data.dependsOnId));
     });
   }
 
-  removeDependencyBetween(taskId: string, otherId: string): Result<void> {
+  removeDependencyBetween(taskId: TaskId, otherId: TaskId): Result<void, DependencyServiceError> {
     return logger.startSpan('DependencyService.removeDependencyBetween', () => {
-      const forward = this.depRepo.delete(taskId, otherId);
+      const forward = mapDepRepo(this.depRepo.delete(taskId, otherId));
       if (forward.ok) return forward;
-      return this.depRepo.delete(otherId, taskId);
+      return mapDepRepo(this.depRepo.delete(otherId, taskId));
     });
   }
 
-  listBlockers(taskId: string): Result<Task[]> {
-    return this.depRepo.getBlockers(taskId);
+  listBlockers(taskId: TaskId): Result<Task[], DependencyServiceError> {
+    return mapDepRepo(this.depRepo.getBlockers(taskId));
   }
 
-  listDependents(taskId: string): Result<Task[]> {
-    return this.depRepo.getDependents(taskId);
+  listDependents(taskId: TaskId): Result<Task[], DependencyServiceError> {
+    return mapDepRepo(this.depRepo.getDependents(taskId));
   }
 
-  listRelated(taskId: string): Result<Task[]> {
-    return this.depRepo.getRelated(taskId);
+  listRelated(taskId: TaskId): Result<Task[], DependencyServiceError> {
+    return mapDepRepo(this.depRepo.getRelated(taskId));
   }
 
-  listDuplicates(taskId: string): Result<Task[]> {
-    return this.depRepo.getDuplicates(taskId);
+  listDuplicates(taskId: TaskId): Result<Task[], DependencyServiceError> {
+    return mapDepRepo(this.depRepo.getDuplicates(taskId));
   }
 
-  listAllDeps(taskId: string): Result<TaskDependency[]> {
-    return this.depRepo.findByTask(taskId);
+  listAllDeps(taskId: TaskId): Result<TaskDependency[], DependencyServiceError> {
+    return mapDepRepo(this.depRepo.findByTask(taskId));
   }
 
-  getTransitiveDeps(taskId: string): Result<Task[]> {
-    return this.depRepo.getTransitiveClosure(taskId);
+  getTransitiveDeps(taskId: TaskId): Result<Task[], DependencyServiceError> {
+    return mapDepRepo(this.depRepo.getTransitiveClosure(taskId));
   }
 
-  buildGraph(taskId: string): Result<DependencyGraph> {
+  buildGraph(taskId: TaskId): Result<DependencyGraph, DependencyServiceError> {
     return logger.startSpan('DependencyService.buildGraph', () => {
-      const taskResult = this.taskRepo.findById(taskId);
+      const taskResult = mapDepRepo(this.taskRepo.findById(taskId));
       if (!taskResult.ok) return taskResult;
       if (!taskResult.value) {
-        return err(new AppError('NOT_FOUND', `Task not found: ${taskId}`));
+        return err(DepErr.taskNotFound(taskId));
       }
       const rootTask = taskResult.value;
 
-      // Collect all reachable nodes via BFS in both directions
-      const visited = new Map<string, Task>();
+      const visited = new Map<TaskId, Task>();
       const allEdges: DependencyEdge[] = [];
-      const queue: string[] = [taskId];
+      const queue: TaskId[] = [taskId];
       visited.set(taskId, rootTask);
 
       while (queue.length > 0) {
         const current = queue.shift();
         if (!current) break;
 
-        // Outgoing: things this task depends on
-        const blockersResult = this.depRepo.findByTask(current);
+        const blockersResult = mapDepRepo(this.depRepo.findByTask(current));
         if (!blockersResult.ok) return blockersResult;
         for (const dep of blockersResult.value) {
           allEdges.push({ from: dep.taskId, to: dep.dependsOnId, type: dep.type });
           if (!visited.has(dep.dependsOnId)) {
-            const t = this.taskRepo.findById(dep.dependsOnId);
+            const t = mapDepRepo(this.taskRepo.findById(dep.dependsOnId));
             if (!t.ok) return t;
             if (t.value) {
               visited.set(dep.dependsOnId, t.value);
@@ -160,13 +155,12 @@ export class DependencyServiceImpl implements DependencyService {
           }
         }
 
-        // Incoming: things that depend on this task
-        const dependentsResult = this.depRepo.findDependents(current);
+        const dependentsResult = mapDepRepo(this.depRepo.findDependents(current));
         if (!dependentsResult.ok) return dependentsResult;
         for (const dep of dependentsResult.value) {
           allEdges.push({ from: dep.taskId, to: dep.dependsOnId, type: dep.type });
           if (!visited.has(dep.taskId)) {
-            const t = this.taskRepo.findById(dep.taskId);
+            const t = mapDepRepo(this.taskRepo.findById(dep.taskId));
             if (!t.ok) return t;
             if (t.value) {
               visited.set(dep.taskId, t.value);
@@ -176,7 +170,6 @@ export class DependencyServiceImpl implements DependencyService {
         }
       }
 
-      // Deduplicate edges
       const edgeSet = new Set<string>();
       const uniqueEdges: DependencyEdge[] = [];
       for (const edge of allEdges) {
@@ -194,7 +187,7 @@ export class DependencyServiceImpl implements DependencyService {
     });
   }
 
-  private toMermaid(nodes: Task[], edges: DependencyEdge[], highlightId: string): string {
+  private toMermaid(nodes: Task[], edges: DependencyEdge[], highlightId: TaskId): string {
     const lines: string[] = ['graph LR'];
 
     for (const node of nodes) {
@@ -218,11 +211,6 @@ export class DependencyServiceImpl implements DependencyService {
   }
 }
 
-/**
- * Normalizes a blocked-by relationship before schema validation.
- * "A blocked-by B" is stored as "B blocks A": swap taskId/dependsOnId
- * and change type from blocked-by to blocks.
- */
 function normalizeBlockedBy(input: unknown): unknown {
   if (
     typeof input === 'object' &&

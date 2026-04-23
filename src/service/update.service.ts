@@ -3,9 +3,14 @@ import { execFileSync } from 'node:child_process';
 import { trace } from '@opentelemetry/api';
 import type { Result, FetchFn } from '../types/common.js';
 import { ok, err } from '../types/common.js';
-import { AppError, toMessage } from '../errors/app-error.js';
 import { logger } from '../logging/logger.js';
 import { isNewerVersion } from '../utils/version.js';
+import type { UpdateServiceError } from './errors.js';
+import { UpdateErr } from './errors.js';
+
+function toMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
 
 export { isNewerVersion };
 
@@ -25,8 +30,10 @@ interface UpdateCache {
 }
 
 export interface UpdateService {
-  checkForUpdate(currentVersion: string): Promise<Result<UpdateCheckResult>>;
-  performUpgrade(currentVersion: string): Result<{ installedVersion: string }>;
+  checkForUpdate(currentVersion: string): Promise<Result<UpdateCheckResult, UpdateServiceError>>;
+  performUpgrade(
+    currentVersion: string,
+  ): Result<{ installedVersion: string }, UpdateServiceError>;
 }
 
 /** Type guard for parsed cache JSON. */
@@ -52,7 +59,9 @@ export class UpdateServiceImpl implements UpdateService {
     private readonly execImpl: ExecFn = defaultExec,
   ) {}
 
-  async checkForUpdate(currentVersion: string): Promise<Result<UpdateCheckResult>> {
+  async checkForUpdate(
+    currentVersion: string,
+  ): Promise<Result<UpdateCheckResult, UpdateServiceError>> {
     return tracer.startActiveSpan('UpdateService.checkForUpdate', async (span) => {
       try {
         span.setAttribute('update.current_version', currentVersion);
@@ -83,25 +92,18 @@ export class UpdateServiceImpl implements UpdateService {
               status: response.status,
             });
             return err(
-              new AppError(
-                'UPGRADE_CHECK',
-                `npm registry returned status ${String(response.status)}`,
-              ),
+              UpdateErr.network(`npm registry returned status ${String(response.status)}`),
             );
           }
 
           const body = (await response.json()) as Record<string, unknown>;
           if (typeof body['version'] !== 'string') {
-            return err(
-              new AppError('UPGRADE_CHECK', 'Unexpected response format from npm registry'),
-            );
+            return err(UpdateErr.parseFailure('Unexpected response format from npm registry'));
           }
           latestVersion = body['version'];
         } catch (e: unknown) {
           logger.warn('Update check: fetch failed', { error: toMessage(e) });
-          return err(
-            new AppError('UPGRADE_CHECK', `Failed to check for updates: ${toMessage(e)}`, e),
-          );
+          return err(UpdateErr.network(`Failed to check for updates: ${toMessage(e)}`));
         } finally {
           clearTimeout(timeout);
         }
@@ -119,7 +121,9 @@ export class UpdateServiceImpl implements UpdateService {
     });
   }
 
-  performUpgrade(currentVersion: string): Result<{ installedVersion: string }> {
+  performUpgrade(
+    currentVersion: string,
+  ): Result<{ installedVersion: string }, UpdateServiceError> {
     return logger.startSpan('UpdateService.performUpgrade', (span) => {
       span.setAttribute('update.previous_version', currentVersion);
       try {
@@ -127,7 +131,7 @@ export class UpdateServiceImpl implements UpdateService {
       } catch (e: unknown) {
         logger.error('Upgrade failed', e, { command: `npm install -g ${PACKAGE_NAME}@latest` });
         span.setAttribute('update.success', false);
-        return err(new AppError('UPGRADE_CHECK', `Upgrade failed: ${toMessage(e)}`, e));
+        return err(UpdateErr.upgradeFailed(`Upgrade failed: ${toMessage(e)}`));
       }
 
       // Read the newly installed version from the registry cache

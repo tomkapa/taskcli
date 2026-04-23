@@ -49,56 +49,56 @@ describe('parseDuration', () => {
       const r = parseDuration('');
       expect(r.ok).toBe(false);
       if (r.ok) return;
-      expect(r.error.code).toBe('VALIDATION');
+      expect(r.error.kind).toBe('validation');
     });
 
     it('rejects missing unit (bare number)', () => {
       const r = parseDuration('5');
       expect(r.ok).toBe(false);
       if (r.ok) return;
-      expect(r.error.code).toBe('VALIDATION');
+      expect(r.error.kind).toBe('validation');
     });
 
     it('rejects unsupported unit x', () => {
       const r = parseDuration('5x');
       expect(r.ok).toBe(false);
       if (r.ok) return;
-      expect(r.error.code).toBe('VALIDATION');
+      expect(r.error.kind).toBe('validation');
     });
 
     it('rejects unsupported unit y', () => {
       const r = parseDuration('5y');
       expect(r.ok).toBe(false);
       if (r.ok) return;
-      expect(r.error.code).toBe('VALIDATION');
+      expect(r.error.kind).toBe('validation');
     });
 
     it('rejects zero value', () => {
       const r = parseDuration('0d');
       expect(r.ok).toBe(false);
       if (r.ok) return;
-      expect(r.error.code).toBe('VALIDATION');
+      expect(r.error.kind).toBe('validation');
     });
 
     it('rejects negative value', () => {
       const r = parseDuration('-1d');
       expect(r.ok).toBe(false);
       if (r.ok) return;
-      expect(r.error.code).toBe('VALIDATION');
+      expect(r.error.kind).toBe('validation');
     });
 
     it('rejects decimal value', () => {
       const r = parseDuration('1.5d');
       expect(r.ok).toBe(false);
       if (r.ok) return;
-      expect(r.error.code).toBe('VALIDATION');
+      expect(r.error.kind).toBe('validation');
     });
 
     it('rejects value exceeding 365 days', () => {
       const r = parseDuration('500d');
       expect(r.ok).toBe(false);
       if (r.ok) return;
-      expect(r.error.code).toBe('VALIDATION');
+      expect(r.error.kind).toBe('validation');
       expect(r.error.message).toContain('500d');
     });
 

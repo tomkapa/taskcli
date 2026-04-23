@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import type { Container } from '../../container.js';
 import { handleResult } from '../../output.js';
+import { presentDependencyServiceError } from '../../../service/errors.js';
 
 export function registerDepAdd(parent: Command, container: Container): void {
   parent
@@ -11,12 +12,12 @@ export function registerDepAdd(parent: Command, container: Container): void {
       'Dependency type: blocks, relates-to, duplicates, blocked-by',
       'blocks',
     )
-    .action((taskId: string, dependsOnId: string, opts: { type?: string }) => {
+    .action((rawTaskId: string, rawDependsOnId: string, opts: { type?: string }) => {
       const result = container.dependencyService.addDependency({
-        taskId,
-        dependsOnId,
+        taskId: rawTaskId,
+        dependsOnId: rawDependsOnId,
         type: opts.type,
       });
-      handleResult(result);
+      handleResult(result, presentDependencyServiceError);
     });
 }

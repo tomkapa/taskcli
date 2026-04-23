@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { createContainer } from '../../src/cli/container.js';
+import { createSqliteRepositorySet } from '../../src/repository/index.js';
 import { runMigrations } from '../../src/db/migrator.js';
 import type { Container } from '../../src/cli/container.js';
 import type { DetectGitRemoteFn } from '../../src/service/project.service.js';
@@ -8,6 +9,11 @@ import type { Project } from '../../src/types/project.js';
 import { GitRemote } from '../../src/types/git-remote.js';
 import { ok } from '../../src/types/common.js';
 import { isTerminalStatus } from '../../src/types/enums.js';
+import {
+  presentTaskServiceError,
+  presentProjectServiceError,
+  presentDependencyServiceError,
+} from '../../src/service/errors.js';
 
 let container: Container;
 let project: Project;
@@ -17,7 +23,7 @@ beforeEach(() => {
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
   runMigrations(db);
-  container = createContainer(db);
+  container = createContainer(createSqliteRepositorySet(db));
 });
 
 describe('ProjectService', () => {
@@ -51,7 +57,7 @@ describe('ProjectService', () => {
     const result = container.projectService.createProject({ name: 'P1' });
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('DUPLICATE');
+    expect(presentProjectServiceError(result.error).code).toBe('DUPLICATE');
   });
 
   it('resolves default project', () => {
@@ -178,7 +184,7 @@ describe('TaskService', () => {
     db.exec('PRAGMA foreign_keys = ON');
     runMigrations(db);
     const mockDetect: DetectGitRemoteFn = () => ok(GitRemote.parse('git@github.com:org/ka.git'));
-    const c = createContainer(db, '', mockDetect);
+    const c = createContainer(createSqliteRepositorySet(db), { detectGitRemote: mockDetect });
 
     c.projectService.createProject({ name: 'Default', isDefault: true, key: 'DEF' });
     c.projectService.createProject({ name: 'KA', key: 'KA' });
@@ -209,7 +215,7 @@ describe('TaskService', () => {
     db.exec('PRAGMA foreign_keys = ON');
     runMigrations(db);
     const mockDetect: DetectGitRemoteFn = () => ok(GitRemote.parse('git@github.com:org/ka.git'));
-    const c = createContainer(db, '', mockDetect);
+    const c = createContainer(createSqliteRepositorySet(db), { detectGitRemote: mockDetect });
 
     c.projectService.createProject({ name: 'Default', isDefault: true, key: 'DEF' });
     c.projectService.createProject({ name: 'KA', key: 'KA' });
@@ -272,7 +278,7 @@ describe('TaskService', () => {
     const result = container.taskService.updateTask(blocked.value.id, { status: 'in-progress' });
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('VALIDATION');
+    expect(presentTaskServiceError(result.error).code).toBe('VALIDATION');
     expect(result.error.message).toContain('blocked');
   });
 
@@ -364,7 +370,7 @@ describe('TaskService', () => {
     const result = container.taskService.deleteTask(created.value.id);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('NOT_FOUND');
+    expect(presentTaskServiceError(result.error).code).toBe('NOT_FOUND');
   });
 
   it('breaks down a task into subtasks', () => {
@@ -392,14 +398,14 @@ describe('TaskService', () => {
     );
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('VALIDATION');
+    expect(presentTaskServiceError(result.error).code).toBe('VALIDATION');
   });
 
   it('returns NOT_FOUND for missing task', () => {
     const result = container.taskService.getTask('nonexistent');
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('NOT_FOUND');
+    expect(presentTaskServiceError(result.error).code).toBe('NOT_FOUND');
   });
 
   describe('rerankTask', () => {
@@ -487,7 +493,7 @@ describe('TaskService', () => {
       );
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('VALIDATION');
+      expect(presentTaskServiceError(result.error).code).toBe('VALIDATION');
       expect(result.error.message).toContain('blocker');
     });
 
@@ -509,7 +515,7 @@ describe('TaskService', () => {
       );
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('VALIDATION');
+      expect(presentTaskServiceError(result.error).code).toBe('VALIDATION');
       expect(result.error.message).toContain('dependent');
     });
 
@@ -700,7 +706,7 @@ describe('TaskService', () => {
       );
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('VALIDATION');
+      expect(presentTaskServiceError(result.error).code).toBe('VALIDATION');
     });
 
     it('top:true clamps under the blocker instead of failing', () => {
@@ -780,7 +786,7 @@ describe('TaskService', () => {
       );
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('VALIDATION');
+      expect(presentTaskServiceError(result.error).code).toBe('VALIDATION');
       expect(result.error.message).toContain('blocker');
     });
 
@@ -951,7 +957,7 @@ describe('TaskService', () => {
       );
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('VALIDATION');
+      expect(presentTaskServiceError(result.error).code).toBe('VALIDATION');
       expect(result.error.message).toContain('cannot have a parent');
     });
 
@@ -989,7 +995,7 @@ describe('TaskService', () => {
       );
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('VALIDATION');
+      expect(presentTaskServiceError(result.error).code).toBe('VALIDATION');
       expect(result.error.message).toContain('release-level');
     });
 
@@ -1008,7 +1014,7 @@ describe('TaskService', () => {
       const result = container.taskService.updateTask(epic.value.id, { type: 'story' });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('VALIDATION');
+      expect(presentTaskServiceError(result.error).code).toBe('VALIDATION');
       expect(result.error.message).toContain('has children');
     });
 
@@ -1038,7 +1044,7 @@ describe('TaskService', () => {
       const result = container.taskService.updateTask(story.value.id, { type: 'release' });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('VALIDATION');
+      expect(presentTaskServiceError(result.error).code).toBe('VALIDATION');
       expect(result.error.message).toContain('has a parent');
     });
 

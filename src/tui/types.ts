@@ -1,6 +1,7 @@
 import type { Task } from '../types/task.js';
 import type { Project } from '../types/project.js';
 import type { TaskFilter } from '../types/task.js';
+import type { TaskId } from '../types/branded.js';
 import type { GitRemote } from '../types/git-remote.js';
 import type { ChangelogEntry } from '../utils/changelog-parser.js';
 
@@ -57,7 +58,7 @@ export interface AppState {
   /** Cursor position in the release panel. */
   releaseSelectedIndex: number;
   /** IDs of selected releases for filtering. Empty = show all. */
-  selectedReleaseIds: Set<string>;
+  selectedReleaseIds: Set<TaskId>;
   /** Scroll offset for detail panel (lines from top). */
   detailScrollOffset: number;
   /** Project currently being linked to a git remote. */
@@ -122,7 +123,7 @@ export type Action =
   | { type: 'SET_PANEL_FOCUS'; panel: PanelFocus }
   | { type: 'SET_RELEASES'; releases: Task[] }
   | { type: 'RELEASE_MOVE_CURSOR'; direction: 'up' | 'down' }
-  | { type: 'TOGGLE_RELEASE'; releaseId: string }
+  | { type: 'TOGGLE_RELEASE'; releaseId: TaskId }
   | { type: 'CLEAR_RELEASE_SELECTION' }
   | { type: 'DETAIL_SCROLL'; direction: 'up' | 'down' }
   | { type: 'DETAIL_RESET_SCROLL' }

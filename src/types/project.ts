@@ -1,5 +1,6 @@
 import { z } from 'zod/v4';
 import { GitRemote } from './git-remote.js';
+import type { ProjectId } from './branded.js';
 
 const gitRemoteField = z
   .string()
@@ -32,7 +33,7 @@ export const UpdateProjectSchema = z.object({
 export type UpdateProjectInput = z.infer<typeof UpdateProjectSchema>;
 
 export interface Project {
-  id: string;
+  id: ProjectId;
   key: string;
   name: string;
   description: string;

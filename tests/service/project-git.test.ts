@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { presentProjectServiceError } from '../../src/service/errors.js';
 import { DatabaseSync } from 'node:sqlite';
 import { runMigrations } from '../../src/db/migrator.js';
-import { SqliteProjectRepository } from '../../src/repository/project.repository.js';
+import { createSqliteRepositorySet } from '../../src/repository/index.js';
 import { ProjectServiceImpl } from '../../src/service/project.service.js';
 import type { ProjectService, DetectGitRemoteFn } from '../../src/service/project.service.js';
 import { GitRemote } from '../../src/types/git-remote.js';
@@ -12,8 +13,8 @@ function createTestService(detectRemote?: DetectGitRemoteFn): ProjectService {
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
   runMigrations(db);
-  const repo = new SqliteProjectRepository(db);
-  return new ProjectServiceImpl(repo, detectRemote);
+  const repos = createSqliteRepositorySet(db);
+  return new ProjectServiceImpl(repos.projects, detectRemote);
 }
 
 describe('ProjectService git remote', () => {
@@ -52,7 +53,7 @@ describe('ProjectService git remote', () => {
       const result = svc.linkGitRemote('NoGit');
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('NOT_FOUND');
+      expect(presentProjectServiceError(result.error).code).toBe('NOT_FOUND');
       expect(result.error.message).toContain('No git remote detected');
     });
 
@@ -65,7 +66,7 @@ describe('ProjectService git remote', () => {
       const result = service.linkGitRemote('Beta', 'https://github.com/org/repo.git');
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('DUPLICATE');
+      expect(presentProjectServiceError(result.error).code).toBe('DUPLICATE');
       expect(result.error.message).toContain('already linked');
     });
 
@@ -93,7 +94,7 @@ describe('ProjectService git remote', () => {
       const result = service.linkGitRemote('ghost', 'git@github.com:org/repo.git');
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('NOT_FOUND');
+      expect(presentProjectServiceError(result.error).code).toBe('NOT_FOUND');
     });
   });
 
@@ -113,7 +114,7 @@ describe('ProjectService git remote', () => {
       const result = service.unlinkGitRemote('NoLink');
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('NOT_FOUND');
+      expect(presentProjectServiceError(result.error).code).toBe('NOT_FOUND');
       expect(result.error.message).toContain('no linked git remote');
     });
 
@@ -121,7 +122,7 @@ describe('ProjectService git remote', () => {
       const result = service.unlinkGitRemote('ghost');
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('NOT_FOUND');
+      expect(presentProjectServiceError(result.error).code).toBe('NOT_FOUND');
     });
   });
 
@@ -250,7 +251,7 @@ describe('ProjectService git remote', () => {
       });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe('DUPLICATE');
+      expect(presentProjectServiceError(result.error).code).toBe('DUPLICATE');
     });
   });
 });

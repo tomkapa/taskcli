@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { createContainer } from '../../src/cli/container.js';
+import { presentTaskServiceError } from '../../src/service/errors.js';
+import { createSqliteRepositorySet } from '../../src/repository/index.js';
 import { runMigrations } from '../../src/db/migrator.js';
 import type { Container } from '../../src/cli/container.js';
 import type { Project } from '../../src/types/project.js';
@@ -13,7 +15,7 @@ beforeEach(() => {
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
   runMigrations(db);
-  container = createContainer(db);
+  container = createContainer(createSqliteRepositorySet(db));
   container.projectService.createProject({ name: 'Proj', isDefault: true });
   const p = container.projectService.resolveProject();
   if (!p.ok) throw new Error('setup failed');
@@ -75,8 +77,9 @@ describe('FTS5 Search', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value).toHaveLength(2);
-    // bm25 returns negative values; more negative = better match
-    expect(result.value[0]!.rank).toBeLessThanOrEqual(result.value[1]!.rank);
+    // Results are best-first; Relevance is normalized so higher = better match.
+    expect(result.value[0]!.task.name).toBe('Fix login bug');
+    expect(result.value[0]!.rank).toBeGreaterThanOrEqual(result.value[1]!.rank);
   });
 
   it('supports multi-word search', () => {
@@ -135,7 +138,7 @@ describe('FTS5 Search', () => {
     const result = container.taskService.searchTasks('  ', project);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('VALIDATION');
+    expect(presentTaskServiceError(result.error).code).toBe('VALIDATION');
   });
 
   it('FTS index stays in sync after task update', () => {

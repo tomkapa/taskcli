@@ -9,7 +9,7 @@ import { logger } from '../logging/logger.js';
  * Returns ok(GitRemote) if found, ok(null) if no git repo or no origin remote.
  * Never returns err() — all git failures are silent fallbacks.
  */
-export function detectGitRemote(cwd?: string): Result<GitRemote | null> {
+export function detectGitRemote(cwd?: string): Result<GitRemote | null, never> {
   try {
     const result = spawnSync('git', ['remote', 'get-url', 'origin'], {
       cwd: cwd ?? process.cwd(),

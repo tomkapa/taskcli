@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import type { Container } from '../../container.js';
 import { handleResult } from '../../output.js';
+import { presentProjectServiceError } from '../../../service/errors.js';
 
 export function registerProjectCreate(parent: Command, container: Container): void {
   parent
@@ -29,7 +30,7 @@ export function registerProjectCreate(parent: Command, container: Container): vo
           isDefault: opts.default,
           gitRemote: opts.gitRemote,
         });
-        handleResult(result);
+        handleResult(result, presentProjectServiceError);
       },
     );
 }
