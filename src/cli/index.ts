@@ -23,6 +23,8 @@ import { registerDepRemove } from './commands/dep/remove.js';
 import { registerDepList } from './commands/dep/list.js';
 import { registerDepGraph } from './commands/dep/graph.js';
 import { registerUpgrade } from './commands/upgrade.js';
+import { registerAnalyticSummary } from './commands/analytic/summary.js';
+import { registerAnalyticCompleted } from './commands/analytic/completed.js';
 
 export function buildCLI(container: Container): Command {
   const program = new Command();
@@ -57,6 +59,10 @@ export function buildCLI(container: Container): Command {
   registerDepRemove(dep, container);
   registerDepList(dep, container);
   registerDepGraph(dep, container);
+
+  const analytic = program.command('analytic').description('Analytic queries for productivity reporting');
+  registerAnalyticSummary(analytic, container);
+  registerAnalyticCompleted(analytic, container);
 
   registerUpgrade(program, container);
 

@@ -10,11 +10,13 @@ import { TaskServiceImpl } from '../service/task.service.js';
 import { DependencyServiceImpl } from '../service/dependency.service.js';
 import { PortabilityServiceImpl } from '../service/portability.service.js';
 import { UpdateServiceImpl } from '../service/update.service.js';
+import { AnalyticServiceImpl } from '../service/analytic.service.js';
 import type { ProjectService } from '../service/project.service.js';
 import type { TaskService } from '../service/task.service.js';
 import type { DependencyService } from '../service/dependency.service.js';
 import type { PortabilityService } from '../service/portability.service.js';
 import type { UpdateService } from '../service/update.service.js';
+import type { AnalyticService } from '../service/analytic.service.js';
 
 export interface Container {
   dbPath: string;
@@ -25,6 +27,7 @@ export interface Container {
   dependencyService: DependencyService;
   portabilityService: PortabilityService;
   updateService: UpdateService;
+  analyticService: AnalyticService;
 }
 
 export function createContainer(
@@ -43,6 +46,7 @@ export function createContainer(
   const portabilityService = new PortabilityServiceImpl(taskService, dependencyService);
   const resolvedUpdateCachePath = updateCachePath ?? join(tmpdir(), 'tayto-update-check.json');
   const updateService = new UpdateServiceImpl(resolvedUpdateCachePath);
+  const analyticService = new AnalyticServiceImpl(taskRepo);
 
   return {
     dbPath,
@@ -54,5 +58,6 @@ export function createContainer(
     dependencyService,
     portabilityService,
     updateService,
+    analyticService,
   };
 }

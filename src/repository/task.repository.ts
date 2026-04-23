@@ -49,6 +49,31 @@ export interface TaskRepository {
   rebalanceByLevel(projectId: string, level: TaskLevel): Result<void>;
   /** FTS5 ranked search across all text fields */
   search(query: string, projectId?: string): Result<SearchResult[]>;
+  countCompletedSince(projectId: string, sinceIso: string): Result<TypeCounts>;
+  countCreatedSince(projectId: string, sinceIso: string): Result<TypeCounts>;
+  countCurrent(projectId: string): Result<CurrentCounts>;
+  findCompletedSince(projectId: string, sinceIso: string): Result<Task[]>;
+}
+
+export interface TypeCounts {
+  byType: Record<string, number>;
+  total: number;
+}
+
+export interface CurrentCounts {
+  byType: Record<string, number>;
+  byStatus: Record<string, number>;
+  total: number;
+}
+
+function toTypeCounts(rows: Array<{ type: string; n: number }>): TypeCounts {
+  const byType: Record<string, number> = {};
+  let total = 0;
+  for (const row of rows) {
+    byType[row.type] = row.n;
+    total += row.n;
+  }
+  return { byType, total };
 }
 
 export class SqliteTaskRepository implements TaskRepository {
@@ -593,6 +618,84 @@ export class SqliteTaskRepository implements TaskRepository {
         );
       } catch (e) {
         return err(new AppError('DB_ERROR', 'Full-text search failed', e));
+      }
+    });
+  }
+
+  countCompletedSince(projectId: string, sinceIso: string): Result<TypeCounts> {
+    return logger.startSpan('TaskRepository.countCompletedSince', () => {
+      try {
+        const rows = this.db
+          .prepare(
+            `SELECT type, COUNT(*) as n FROM tasks
+             WHERE project_id = ? AND ${NOT_DELETED}
+               AND status = 'done' AND updated_at >= ?
+             GROUP BY type`,
+          )
+          .all(projectId, sinceIso) as Array<{ type: string; n: number }>;
+        return ok(toTypeCounts(rows));
+      } catch (e) {
+        return err(new AppError('DB_ERROR', 'countCompletedSince failed', e));
+      }
+    });
+  }
+
+  countCreatedSince(projectId: string, sinceIso: string): Result<TypeCounts> {
+    return logger.startSpan('TaskRepository.countCreatedSince', () => {
+      try {
+        const rows = this.db
+          .prepare(
+            `SELECT type, COUNT(*) as n FROM tasks
+             WHERE project_id = ? AND ${NOT_DELETED} AND created_at >= ?
+             GROUP BY type`,
+          )
+          .all(projectId, sinceIso) as Array<{ type: string; n: number }>;
+        return ok(toTypeCounts(rows));
+      } catch (e) {
+        return err(new AppError('DB_ERROR', 'countCreatedSince failed', e));
+      }
+    });
+  }
+
+  countCurrent(projectId: string): Result<CurrentCounts> {
+    return logger.startSpan('TaskRepository.countCurrent', () => {
+      try {
+        const rows = this.db
+          .prepare(
+            `SELECT status, type, COUNT(*) as n FROM tasks
+             WHERE project_id = ? AND ${NOT_DELETED}
+             GROUP BY status, type`,
+          )
+          .all(projectId) as Array<{ status: string; type: string; n: number }>;
+        const byType: Record<string, number> = {};
+        const byStatus: Record<string, number> = {};
+        let total = 0;
+        for (const row of rows) {
+          byType[row.type] = (byType[row.type] ?? 0) + row.n;
+          byStatus[row.status] = (byStatus[row.status] ?? 0) + row.n;
+          total += row.n;
+        }
+        return ok({ byType, byStatus, total });
+      } catch (e) {
+        return err(new AppError('DB_ERROR', 'countCurrent failed', e));
+      }
+    });
+  }
+
+  findCompletedSince(projectId: string, sinceIso: string): Result<Task[]> {
+    return logger.startSpan('TaskRepository.findCompletedSince', () => {
+      try {
+        const rows = this.db
+          .prepare(
+            `SELECT * FROM tasks
+             WHERE project_id = ? AND ${NOT_DELETED}
+               AND status = 'done' AND updated_at >= ?
+             ORDER BY updated_at DESC`,
+          )
+          .all(projectId, sinceIso) as TaskRow[];
+        return ok(rows.map(rowToTask));
+      } catch (e) {
+        return err(new AppError('DB_ERROR', 'findCompletedSince failed', e));
       }
     });
   }

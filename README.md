@@ -140,6 +140,67 @@ Or from the Claude Code marketplace:
 
 ---
 
+## Analytics
+
+Two read-only commands expose productivity metrics over a rolling time window. Designed to be consumed by a scheduled agent (e.g. Claude Cowork) at a set interval.
+
+### `tayto analytic summary`
+
+Returns a JSON productivity summary for the given period.
+
+```
+tayto analytic summary --period <day|week> [-p <project>]
+```
+
+**Sample output:**
+
+```json
+{
+  "ok": true,
+  "data": {
+    "period": "day",
+    "windowStart": "2026-04-22T06:00:00.000Z",
+    "windowEnd": "2026-04-23T06:00:00.000Z",
+    "completed": { "total": 3, "byType": { "story": 2, "bug": 1, "tech-debt": 0, "release": 0 } },
+    "created":   { "total": 5, "byType": { "story": 4, "bug": 1, "tech-debt": 0, "release": 0 } },
+    "current":   { "total": 12, "byStatus": { "backlog": 5, "todo": 3, "in-progress": 2, "review": 1, "done": 1, "cancelled": 0 }, "byType": { ... } },
+    "backlogDelta": 2,
+    "throughputPerDay": 3
+  }
+}
+```
+
+- `backlogDelta` = `created.total − completed.total` (positive means backlog is growing)
+- `throughputPerDay` = `completed.total / periodDays`
+- All `byType` and `byStatus` maps always include every key (zero-filled) for stable agent parsing
+
+> **Caveat:** `completed` counts tasks whose `updated_at` falls within the window. Because any edit bumps `updated_at`, a done task edited later will reappear. A proper `completed_at` column is tracked as a separate tech-debt item.
+
+### `tayto analytic completed`
+
+Returns the raw list of completed tasks within a rolling window.
+
+```
+tayto analytic completed --since <duration> [-p <project>]
+```
+
+Duration format: `<positive integer><unit>` where unit is `m` (minutes), `h` (hours), `d` (days), or `w` (weeks). Examples: `24h`, `7d`, `2w`. Maximum: `365d`.
+
+**Sample output:**
+
+```json
+{
+  "ok": true,
+  "data": [
+    { "id": "PROJ-12", "name": "Fix auth bug", "type": "bug", "status": "done", "updatedAt": "2026-04-23T05:12:00.000Z", ... }
+  ]
+}
+```
+
+Results are ordered by `updated_at DESC`. Invalid `--since` values return a VALIDATION error on stderr with exit code 1.
+
+---
+
 ## Configuration
 
 | Variable | Default | Description |
