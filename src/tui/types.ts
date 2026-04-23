@@ -13,7 +13,7 @@ export const ViewType = {
   ProjectCreate: 'project-create',
   ProjectEdit: 'project-edit',
   DependencyList: 'dependency-list',
-  EpicPicker: 'epic-picker',
+  ReleasePicker: 'release-picker',
   ProjectLink: 'project-link',
   Help: 'help',
   Settings: 'settings',
@@ -25,7 +25,7 @@ export type TopTab = (typeof TopTab)[keyof typeof TopTab];
 
 export type FlashLevel = 'info' | 'warn' | 'error';
 
-export type PanelFocus = 'epic' | 'list' | 'detail';
+export type PanelFocus = 'release' | 'list' | 'detail';
 
 export interface AppState {
   activeView: ViewType;
@@ -52,22 +52,22 @@ export interface AppState {
   isAddingDep: boolean;
   addDepInput: string;
   focusedPanel: PanelFocus;
-  /** All epics in the active project (level 1 tasks). */
-  epics: Task[];
-  /** Cursor position in the epic panel. */
-  epicSelectedIndex: number;
-  /** IDs of selected epics for filtering. Empty = show all. */
-  selectedEpicIds: Set<string>;
+  /** All releases in the active project (level 1 tasks). */
+  releases: Task[];
+  /** Cursor position in the release panel. */
+  releaseSelectedIndex: number;
+  /** IDs of selected releases for filtering. Empty = show all. */
+  selectedReleaseIds: Set<string>;
   /** Scroll offset for detail panel (lines from top). */
   detailScrollOffset: number;
   /** Project currently being linked to a git remote. */
   linkingProject: Project | null;
   /** Project currently being edited. */
   editingProject: Project | null;
-  /** True when reordering epics. */
-  isEpicReordering: boolean;
-  /** Snapshot of epics before reorder started (for cancel/revert). */
-  epicReorderSnapshot: Task[] | null;
+  /** True when reordering releases. */
+  isReleaseReordering: boolean;
+  /** Snapshot of releases before reorder started (for cancel/revert). */
+  releaseReorderSnapshot: Task[] | null;
   /**
    * Git remote detected in cwd that does not match any existing project.
    * When set, the "new project detected" dialog is shown.
@@ -120,15 +120,15 @@ export type Action =
   | { type: 'SET_ADDING_DEP'; active: boolean }
   | { type: 'SET_ADD_DEP_INPUT'; input: string }
   | { type: 'SET_PANEL_FOCUS'; panel: PanelFocus }
-  | { type: 'SET_EPICS'; epics: Task[] }
-  | { type: 'EPIC_MOVE_CURSOR'; direction: 'up' | 'down' }
-  | { type: 'TOGGLE_EPIC'; epicId: string }
-  | { type: 'CLEAR_EPIC_SELECTION' }
+  | { type: 'SET_RELEASES'; releases: Task[] }
+  | { type: 'RELEASE_MOVE_CURSOR'; direction: 'up' | 'down' }
+  | { type: 'TOGGLE_RELEASE'; releaseId: string }
+  | { type: 'CLEAR_RELEASE_SELECTION' }
   | { type: 'DETAIL_SCROLL'; direction: 'up' | 'down' }
   | { type: 'DETAIL_RESET_SCROLL' }
-  | { type: 'ENTER_EPIC_REORDER' }
-  | { type: 'EPIC_REORDER_MOVE'; direction: 'up' | 'down' }
-  | { type: 'EXIT_EPIC_REORDER'; save: boolean }
+  | { type: 'ENTER_RELEASE_REORDER' }
+  | { type: 'RELEASE_REORDER_MOVE'; direction: 'up' | 'down' }
+  | { type: 'EXIT_RELEASE_REORDER'; save: boolean }
   | { type: 'SET_LINKING_PROJECT'; project: Project | null }
   | { type: 'SET_EDITING_PROJECT'; project: Project | null }
   | { type: 'SET_DETECTED_GIT_REMOTE'; remote: GitRemote | null }

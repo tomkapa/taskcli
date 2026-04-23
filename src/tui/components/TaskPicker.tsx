@@ -4,6 +4,7 @@ import type { Task } from '../../types/task.js';
 import { DependencyType, UIDependencyType } from '../../types/enums.js';
 import { theme } from '../theme.js';
 import { DEP_TYPE_LABEL } from '../constants.js';
+import { calcViewStart } from '../viewport.js';
 
 const DEP_TYPE_VALUES = Object.values(UIDependencyType);
 
@@ -59,14 +60,7 @@ export function TaskPicker({ tasks, excludeIds, initialSelection, onConfirm, onC
     );
   });
 
-  // Scrolling window
-  let viewStart = 0;
-  if (cursorIndex >= viewStart + maxVisible) {
-    viewStart = cursorIndex - maxVisible + 1;
-  }
-  if (cursorIndex < viewStart) {
-    viewStart = cursorIndex;
-  }
+  const viewStart = calcViewStart(cursorIndex, maxVisible);
   const visible = available.slice(viewStart, viewStart + maxVisible);
 
   useInput((input, key) => {

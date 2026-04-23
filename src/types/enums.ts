@@ -9,7 +9,7 @@ export const TaskStatus = {
 export type TaskStatus = (typeof TaskStatus)[keyof typeof TaskStatus];
 
 export const TaskType = {
-  Epic: 'epic',
+  Release: 'release',
   Story: 'story',
   TechDebt: 'tech-debt',
   Bug: 'bug',
@@ -18,17 +18,17 @@ export type TaskType = (typeof TaskType)[keyof typeof TaskType];
 
 /**
  * Task level derived from type.
- * Level 1: epics (grouping/planning layer)
+ * Level 1: releases (grouping/delivery layer)
  * Level 2: stories, tech-debt, bugs (execution layer)
  */
 export const TaskLevel = {
-  Epic: 1,
+  Release: 1,
   Work: 2,
 } as const;
 export type TaskLevel = (typeof TaskLevel)[keyof typeof TaskLevel];
 
 const TYPE_TO_LEVEL: Record<string, TaskLevel> = {
-  [TaskType.Epic]: TaskLevel.Epic,
+  [TaskType.Release]: TaskLevel.Release,
   [TaskType.Story]: TaskLevel.Work,
   [TaskType.TechDebt]: TaskLevel.Work,
   [TaskType.Bug]: TaskLevel.Work,

@@ -2,6 +2,16 @@ import { ViewType, TopTab } from './types.js';
 import type { AppState, Action } from './types.js';
 import { PAGE_SIZE } from './constants.js';
 
+function swapAt<T>(arr: T[], i: number, j: number): T[] {
+  const next = [...arr];
+  const a = next[i];
+  const b = next[j];
+  if (a === undefined || b === undefined) return arr;
+  next[i] = b;
+  next[j] = a;
+  return next;
+}
+
 export const initialState: AppState = {
   activeView: ViewType.TaskList,
   breadcrumbs: [ViewType.TaskList],
@@ -28,13 +38,13 @@ export const initialState: AppState = {
   addDepInput: '',
   focusedPanel: 'list',
   detailScrollOffset: 0,
-  epics: [],
-  epicSelectedIndex: 0,
-  selectedEpicIds: new Set(),
+  releases: [],
+  releaseSelectedIndex: 0,
+  selectedReleaseIds: new Set(),
   linkingProject: null,
   editingProject: null,
-  isEpicReordering: false,
-  epicReorderSnapshot: null,
+  isReleaseReordering: false,
+  releaseReorderSnapshot: null,
   detectedGitRemote: null,
   changelogEntries: null,
   changelogIndex: 0,
@@ -152,27 +162,13 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'REORDER_MOVE': {
       if (!state.isReordering) return state;
       const idx = state.selectedIndex;
-      const tasks = [...state.tasks];
       const swapIdx = action.direction === 'up' ? idx - 1 : idx + 1;
-      if (swapIdx < 0 || swapIdx >= tasks.length) return state;
-
-      // Swap tasks in the local array
-      const current = tasks[idx];
-      const swap = tasks[swapIdx];
-      if (!current || !swap) return state;
-      tasks[idx] = swap;
-      tasks[swapIdx] = current;
-
-      return {
-        ...state,
-        tasks,
-        selectedIndex: swapIdx,
-      };
+      if (swapIdx < 0 || swapIdx >= state.tasks.length) return state;
+      return { ...state, tasks: swapAt(state.tasks, idx, swapIdx), selectedIndex: swapIdx };
     }
 
     case 'EXIT_REORDER': {
       if (!action.save && state.reorderSnapshot) {
-        // Revert to snapshot
         return {
           ...state,
           isReordering: false,
@@ -233,76 +229,71 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'DETAIL_RESET_SCROLL':
       return { ...state, detailScrollOffset: 0 };
 
-    case 'SET_EPICS':
+    case 'SET_RELEASES':
       return {
         ...state,
-        epics: action.epics,
-        epicSelectedIndex: Math.min(state.epicSelectedIndex, Math.max(0, action.epics.length - 1)),
+        releases: action.releases,
+        releaseSelectedIndex: Math.min(
+          state.releaseSelectedIndex,
+          Math.max(0, action.releases.length - 1),
+        ),
       };
 
-    case 'EPIC_MOVE_CURSOR': {
-      if (state.epics.length === 0) return state;
-      const maxIdx = Math.max(0, state.epics.length - 1);
+    case 'RELEASE_MOVE_CURSOR': {
+      if (state.releases.length === 0) return state;
+      const maxIdx = Math.max(0, state.releases.length - 1);
       const newIdx =
         action.direction === 'up'
-          ? Math.max(0, state.epicSelectedIndex - 1)
-          : Math.min(maxIdx, state.epicSelectedIndex + 1);
-      return { ...state, epicSelectedIndex: newIdx };
+          ? Math.max(0, state.releaseSelectedIndex - 1)
+          : Math.min(maxIdx, state.releaseSelectedIndex + 1);
+      return { ...state, releaseSelectedIndex: newIdx };
     }
 
-    case 'TOGGLE_EPIC': {
-      const next = new Set(state.selectedEpicIds);
-      if (next.has(action.epicId)) {
-        next.delete(action.epicId);
+    case 'TOGGLE_RELEASE': {
+      const next = new Set(state.selectedReleaseIds);
+      if (next.has(action.releaseId)) {
+        next.delete(action.releaseId);
       } else {
-        next.add(action.epicId);
+        next.add(action.releaseId);
       }
-      return { ...state, selectedEpicIds: next, selectedIndex: 0 };
+      return { ...state, selectedReleaseIds: next, selectedIndex: 0 };
     }
 
-    case 'CLEAR_EPIC_SELECTION':
-      return { ...state, selectedEpicIds: new Set(), selectedIndex: 0 };
+    case 'CLEAR_RELEASE_SELECTION':
+      return { ...state, selectedReleaseIds: new Set(), selectedIndex: 0 };
 
-    case 'ENTER_EPIC_REORDER':
+    case 'ENTER_RELEASE_REORDER':
       return {
         ...state,
-        isEpicReordering: true,
-        epicReorderSnapshot: [...state.epics],
+        isReleaseReordering: true,
+        releaseReorderSnapshot: [...state.releases],
       };
 
-    case 'EPIC_REORDER_MOVE': {
-      if (!state.isEpicReordering) return state;
-      const idx = state.epicSelectedIndex;
-      const epics = [...state.epics];
+    case 'RELEASE_REORDER_MOVE': {
+      if (!state.isReleaseReordering) return state;
+      const idx = state.releaseSelectedIndex;
       const swapIdx = action.direction === 'up' ? idx - 1 : idx + 1;
-      if (swapIdx < 0 || swapIdx >= epics.length) return state;
-
-      const current = epics[idx];
-      const swap = epics[swapIdx];
-      if (!current || !swap) return state;
-      epics[idx] = swap;
-      epics[swapIdx] = current;
-
+      if (swapIdx < 0 || swapIdx >= state.releases.length) return state;
       return {
         ...state,
-        epics,
-        epicSelectedIndex: swapIdx,
+        releases: swapAt(state.releases, idx, swapIdx),
+        releaseSelectedIndex: swapIdx,
       };
     }
 
-    case 'EXIT_EPIC_REORDER': {
-      if (!action.save && state.epicReorderSnapshot) {
+    case 'EXIT_RELEASE_REORDER': {
+      if (!action.save && state.releaseReorderSnapshot) {
         return {
           ...state,
-          isEpicReordering: false,
-          epics: state.epicReorderSnapshot,
-          epicReorderSnapshot: null,
+          isReleaseReordering: false,
+          releases: state.releaseReorderSnapshot,
+          releaseReorderSnapshot: null,
         };
       }
       return {
         ...state,
-        isEpicReordering: false,
-        epicReorderSnapshot: null,
+        isReleaseReordering: false,
+        releaseReorderSnapshot: null,
       };
     }
 

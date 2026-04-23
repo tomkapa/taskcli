@@ -3,16 +3,17 @@ import { Box, Text, useInput, useStdout } from 'ink';
 import type { Task } from '../../types/task.js';
 import { theme } from '../theme.js';
 import { STATUS_COLOR } from '../constants.js';
+import { calcViewStart } from '../viewport.js';
 
 interface Props {
-  epics: Task[];
-  /** Currently assigned epic ID (highlighted in the list). */
-  currentEpicId: string | null;
-  onSelect: (epicId: string | null) => void;
+  releases: Task[];
+  /** Currently assigned release ID (highlighted in the list). */
+  currentReleaseId: string | null;
+  onSelect: (releaseId: string | null) => void;
   onCancel: () => void;
 }
 
-export function EpicPicker({ epics, currentEpicId, onSelect, onCancel }: Props) {
+export function ReleasePicker({ releases, currentReleaseId, onSelect, onCancel }: Props) {
   const { stdout } = useStdout();
   const termHeight = stdout.rows > 0 ? stdout.rows : 24;
   const maxVisible = Math.max(3, termHeight - 10);
@@ -21,7 +22,7 @@ export function EpicPicker({ epics, currentEpicId, onSelect, onCancel }: Props) 
   const [isSearching, setIsSearching] = useState(false);
   const [cursorIndex, setCursorIndex] = useState(0);
 
-  const filtered = epics.filter((e) => {
+  const filtered = releases.filter((e) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (
@@ -31,13 +32,7 @@ export function EpicPicker({ epics, currentEpicId, onSelect, onCancel }: Props) 
     );
   });
 
-  let viewStart = 0;
-  if (cursorIndex >= viewStart + maxVisible) {
-    viewStart = cursorIndex - maxVisible + 1;
-  }
-  if (cursorIndex < viewStart) {
-    viewStart = cursorIndex;
-  }
+  const viewStart = calcViewStart(cursorIndex, maxVisible);
   const visible = filtered.slice(viewStart, viewStart + maxVisible);
 
   useInput((input, key) => {
@@ -74,9 +69,9 @@ export function EpicPicker({ epics, currentEpicId, onSelect, onCancel }: Props) 
     }
 
     if (key.return) {
-      const epic = filtered[cursorIndex];
-      if (epic) {
-        onSelect(epic.id);
+      const release = filtered[cursorIndex];
+      if (release) {
+        onSelect(release.id);
       }
       return;
     }
@@ -104,11 +99,11 @@ export function EpicPicker({ epics, currentEpicId, onSelect, onCancel }: Props) 
       <Box gap={0}>
         <Text color={theme.title} bold>
           {' '}
-          assign to epic
+          assign to release
         </Text>
         <Text color={theme.titleCounter} bold>
           {' '}
-          [{epics.length}]
+          [{releases.length}]
         </Text>
       </Box>
 
@@ -135,31 +130,33 @@ export function EpicPicker({ epics, currentEpicId, onSelect, onCancel }: Props) 
 
       {filtered.length === 0 ? (
         <Box paddingX={2} paddingY={1}>
-          <Text dimColor>No epics match the filter</Text>
+          <Text dimColor>No releases match the filter</Text>
         </Box>
       ) : (
-        visible.map((epic, i) => {
+        visible.map((release, i) => {
           const actualIndex = viewStart + i;
           const isCursor = actualIndex === cursorIndex;
-          const isCurrent = epic.id === currentEpicId;
+          const isCurrent = release.id === currentReleaseId;
           const marker = isCurrent ? '* ' : '  ';
-          const statusColor = STATUS_COLOR[epic.status] ?? theme.table.fg;
+          const statusColor = STATUS_COLOR[release.status] ?? theme.table.fg;
 
           return (
-            <Box key={epic.id} paddingX={1}>
+            <Box key={release.id} paddingX={1}>
               {isCursor ? (
                 <Text backgroundColor={theme.table.cursorBg} color={theme.table.cursorFg} bold>
                   {'> '}
-                  {epic.id.padEnd(14)}
-                  {epic.status.padEnd(14)}
-                  {epic.name}
+                  {release.id.padEnd(14)}
+                  {release.status.padEnd(14)}
+                  {release.name}
                 </Text>
               ) : (
                 <>
                   <Text color={isCurrent ? theme.titleHighlight : theme.table.fg}>{marker}</Text>
-                  <Text color={theme.yaml.value}>{epic.id.padEnd(14)}</Text>
-                  <Text color={statusColor}>{epic.status.padEnd(14)}</Text>
-                  <Text color={isCurrent ? theme.titleHighlight : theme.table.fg}>{epic.name}</Text>
+                  <Text color={theme.yaml.value}>{release.id.padEnd(14)}</Text>
+                  <Text color={statusColor}>{release.status.padEnd(14)}</Text>
+                  <Text color={isCurrent ? theme.titleHighlight : theme.table.fg}>
+                    {release.name}
+                  </Text>
                 </>
               )}
             </Box>

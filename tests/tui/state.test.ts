@@ -26,7 +26,7 @@ const mockEpic: Task = {
   parentId: null,
   name: 'Epic task',
   description: 'An epic',
-  type: 'epic',
+  type: 'release',
   status: 'backlog',
   rank: 500,
   technicalNotes: '',
@@ -36,8 +36,8 @@ const mockEpic: Task = {
 };
 
 function derivePreviewItem(state: AppState): Task | null {
-  return state.focusedPanel === 'epic'
-    ? (state.epics[state.epicSelectedIndex] ?? null)
+  return state.focusedPanel === 'release'
+    ? (state.releases[state.releaseSelectedIndex] ?? null)
     : (state.tasks[state.selectedIndex] ?? null);
 }
 
@@ -604,117 +604,117 @@ describe('appReducer', () => {
     });
   });
 
-  describe('Epic panel state', () => {
+  describe('Release panel state', () => {
     const epicTask: Task = {
       ...mockTask,
       id: 'epic-1',
-      type: 'epic',
+      type: 'release',
       name: 'Epic 1',
     };
     const epicTask2: Task = {
       ...mockTask,
       id: 'epic-2',
-      type: 'epic',
+      type: 'release',
       name: 'Epic 2',
     };
 
-    it('SET_EPICS stores epics and clamps cursor', () => {
-      const withIndex = { ...initialState, epicSelectedIndex: 5 };
+    it('SET_RELEASES stores releases and clamps cursor', () => {
+      const withIndex = { ...initialState, releaseSelectedIndex: 5 };
       const state = appReducer(withIndex, {
-        type: 'SET_EPICS',
-        epics: [epicTask, epicTask2],
+        type: 'SET_RELEASES',
+        releases: [epicTask, epicTask2],
       });
-      expect(state.epics).toHaveLength(2);
-      expect(state.epicSelectedIndex).toBe(1); // clamped from 5 to max 1
+      expect(state.releases).toHaveLength(2);
+      expect(state.releaseSelectedIndex).toBe(1); // clamped from 5 to max 1
     });
 
-    it('EPIC_MOVE_CURSOR moves within bounds', () => {
+    it('RELEASE_MOVE_CURSOR moves within bounds', () => {
       let state = appReducer(initialState, {
-        type: 'SET_EPICS',
-        epics: [epicTask, epicTask2],
+        type: 'SET_RELEASES',
+        releases: [epicTask, epicTask2],
       });
-      state = appReducer(state, { type: 'EPIC_MOVE_CURSOR', direction: 'down' });
-      expect(state.epicSelectedIndex).toBe(1);
+      state = appReducer(state, { type: 'RELEASE_MOVE_CURSOR', direction: 'down' });
+      expect(state.releaseSelectedIndex).toBe(1);
 
       // Can't go past end
-      state = appReducer(state, { type: 'EPIC_MOVE_CURSOR', direction: 'down' });
-      expect(state.epicSelectedIndex).toBe(1);
+      state = appReducer(state, { type: 'RELEASE_MOVE_CURSOR', direction: 'down' });
+      expect(state.releaseSelectedIndex).toBe(1);
 
       // Go back up
-      state = appReducer(state, { type: 'EPIC_MOVE_CURSOR', direction: 'up' });
-      expect(state.epicSelectedIndex).toBe(0);
+      state = appReducer(state, { type: 'RELEASE_MOVE_CURSOR', direction: 'up' });
+      expect(state.releaseSelectedIndex).toBe(0);
 
       // Can't go before 0
-      state = appReducer(state, { type: 'EPIC_MOVE_CURSOR', direction: 'up' });
-      expect(state.epicSelectedIndex).toBe(0);
+      state = appReducer(state, { type: 'RELEASE_MOVE_CURSOR', direction: 'up' });
+      expect(state.releaseSelectedIndex).toBe(0);
     });
 
-    it('EPIC_MOVE_CURSOR is no-op when empty', () => {
-      const state = appReducer(initialState, { type: 'EPIC_MOVE_CURSOR', direction: 'down' });
-      expect(state.epicSelectedIndex).toBe(0);
+    it('RELEASE_MOVE_CURSOR is no-op when empty', () => {
+      const state = appReducer(initialState, { type: 'RELEASE_MOVE_CURSOR', direction: 'down' });
+      expect(state.releaseSelectedIndex).toBe(0);
     });
 
-    it('TOGGLE_EPIC adds and removes epic from selection', () => {
+    it('TOGGLE_RELEASE adds and removes release from selection', () => {
       let state = appReducer(initialState, {
-        type: 'SET_EPICS',
-        epics: [epicTask, epicTask2],
+        type: 'SET_RELEASES',
+        releases: [epicTask, epicTask2],
       });
 
       // Select epic-1
-      state = appReducer(state, { type: 'TOGGLE_EPIC', epicId: 'epic-1' });
-      expect(state.selectedEpicIds.has('epic-1')).toBe(true);
-      expect(state.selectedEpicIds.size).toBe(1);
+      state = appReducer(state, { type: 'TOGGLE_RELEASE', releaseId: 'epic-1' });
+      expect(state.selectedReleaseIds.has('epic-1')).toBe(true);
+      expect(state.selectedReleaseIds.size).toBe(1);
       expect(state.selectedIndex).toBe(0); // resets task cursor
 
       // Also select epic-2
-      state = appReducer(state, { type: 'TOGGLE_EPIC', epicId: 'epic-2' });
-      expect(state.selectedEpicIds.size).toBe(2);
+      state = appReducer(state, { type: 'TOGGLE_RELEASE', releaseId: 'epic-2' });
+      expect(state.selectedReleaseIds.size).toBe(2);
 
       // Deselect epic-1
-      state = appReducer(state, { type: 'TOGGLE_EPIC', epicId: 'epic-1' });
-      expect(state.selectedEpicIds.has('epic-1')).toBe(false);
-      expect(state.selectedEpicIds.size).toBe(1);
+      state = appReducer(state, { type: 'TOGGLE_RELEASE', releaseId: 'epic-1' });
+      expect(state.selectedReleaseIds.has('epic-1')).toBe(false);
+      expect(state.selectedReleaseIds.size).toBe(1);
     });
 
-    it('CLEAR_EPIC_SELECTION removes all selections', () => {
-      let state = appReducer(initialState, { type: 'TOGGLE_EPIC', epicId: 'epic-1' });
-      state = appReducer(state, { type: 'TOGGLE_EPIC', epicId: 'epic-2' });
-      expect(state.selectedEpicIds.size).toBe(2);
+    it('CLEAR_RELEASE_SELECTION removes all selections', () => {
+      let state = appReducer(initialState, { type: 'TOGGLE_RELEASE', releaseId: 'epic-1' });
+      state = appReducer(state, { type: 'TOGGLE_RELEASE', releaseId: 'epic-2' });
+      expect(state.selectedReleaseIds.size).toBe(2);
 
-      state = appReducer(state, { type: 'CLEAR_EPIC_SELECTION' });
-      expect(state.selectedEpicIds.size).toBe(0);
+      state = appReducer(state, { type: 'CLEAR_RELEASE_SELECTION' });
+      expect(state.selectedReleaseIds.size).toBe(0);
       expect(state.selectedIndex).toBe(0);
     });
 
-    it('initialState has empty epic state', () => {
-      expect(initialState.epics).toEqual([]);
-      expect(initialState.epicSelectedIndex).toBe(0);
-      expect(initialState.selectedEpicIds.size).toBe(0);
+    it('initialState has empty release state', () => {
+      expect(initialState.releases).toEqual([]);
+      expect(initialState.releaseSelectedIndex).toBe(0);
+      expect(initialState.selectedReleaseIds.size).toBe(0);
     });
 
-    it('panel focus includes epic option', () => {
+    it('panel focus includes release option', () => {
       const state = appReducer(initialState, {
         type: 'SET_PANEL_FOCUS',
-        panel: 'epic',
+        panel: 'release',
       });
-      expect(state.focusedPanel).toBe('epic');
+      expect(state.focusedPanel).toBe('release');
     });
   });
 
-  describe('EpicPicker navigation', () => {
-    it('NAVIGATE_TO EpicPicker pushes breadcrumb', () => {
+  describe('ReleasePicker navigation', () => {
+    it('NAVIGATE_TO ReleasePicker pushes breadcrumb', () => {
       const state = appReducer(initialState, {
         type: 'NAVIGATE_TO',
-        view: ViewType.EpicPicker,
+        view: ViewType.ReleasePicker,
       });
-      expect(state.activeView).toBe(ViewType.EpicPicker);
-      expect(state.breadcrumbs).toEqual([ViewType.TaskList, ViewType.EpicPicker]);
+      expect(state.activeView).toBe(ViewType.ReleasePicker);
+      expect(state.breadcrumbs).toEqual([ViewType.TaskList, ViewType.ReleasePicker]);
     });
 
-    it('GO_BACK from EpicPicker returns to TaskList', () => {
+    it('GO_BACK from ReleasePicker returns to TaskList', () => {
       let state = appReducer(initialState, {
         type: 'NAVIGATE_TO',
-        view: ViewType.EpicPicker,
+        view: ViewType.ReleasePicker,
       });
       state = appReducer(state, { type: 'GO_BACK' });
       expect(state.activeView).toBe(ViewType.TaskList);
@@ -875,7 +875,7 @@ describe('appReducer', () => {
     });
 
     it('SWITCH_TAB resets focusedPanel to list', () => {
-      const withEpicFocus = { ...initialState, focusedPanel: 'epic' as const };
+      const withEpicFocus = { ...initialState, focusedPanel: 'release' as const };
       const state = appReducer(withEpicFocus, { type: 'SWITCH_TAB', tab: TopTab.Settings });
       expect(state.focusedPanel).toBe('list');
     });
@@ -898,8 +898,8 @@ describe('previewItem derivation', () => {
       focusedPanel: 'list',
       tasks: [mockTask],
       selectedIndex: 0,
-      epics: [mockEpic],
-      epicSelectedIndex: 0,
+      releases: [mockEpic],
+      releaseSelectedIndex: 0,
     };
     expect(derivePreviewItem(state)).toBe(mockTask);
   });
@@ -910,46 +910,46 @@ describe('previewItem derivation', () => {
       focusedPanel: 'detail',
       tasks: [mockTask],
       selectedIndex: 0,
-      epics: [mockEpic],
-      epicSelectedIndex: 0,
+      releases: [mockEpic],
+      releaseSelectedIndex: 0,
     };
     expect(derivePreviewItem(state)).toBe(mockTask);
   });
 
-  it('returns selected epic when focusedPanel is epic', () => {
+  it('returns selected release when focusedPanel is release', () => {
     const state: AppState = {
       ...initialState,
-      focusedPanel: 'epic',
+      focusedPanel: 'release',
       tasks: [mockTask],
       selectedIndex: 0,
-      epics: [mockEpic],
-      epicSelectedIndex: 0,
+      releases: [mockEpic],
+      releaseSelectedIndex: 0,
     };
     expect(derivePreviewItem(state)).toBe(mockEpic);
   });
 
-  it('switches preview when focus changes from epic to list', () => {
+  it('switches preview when focus changes from release to list', () => {
     const base: AppState = {
       ...initialState,
       tasks: [mockTask],
       selectedIndex: 0,
-      epics: [mockEpic],
-      epicSelectedIndex: 0,
+      releases: [mockEpic],
+      releaseSelectedIndex: 0,
     };
-    const withEpicFocus = { ...base, focusedPanel: 'epic' as const };
+    const withEpicFocus = { ...base, focusedPanel: 'release' as const };
     const withListFocus = { ...base, focusedPanel: 'list' as const };
     expect(derivePreviewItem(withEpicFocus)).toBe(mockEpic);
     expect(derivePreviewItem(withListFocus)).toBe(mockTask);
   });
 
-  it('returns null when focusedPanel is epic but no epics exist', () => {
+  it('returns null when focusedPanel is release but no releases exist', () => {
     const state: AppState = {
       ...initialState,
-      focusedPanel: 'epic',
+      focusedPanel: 'release',
       tasks: [mockTask],
       selectedIndex: 0,
-      epics: [],
-      epicSelectedIndex: 0,
+      releases: [],
+      releaseSelectedIndex: 0,
     };
     expect(derivePreviewItem(state)).toBeNull();
   });

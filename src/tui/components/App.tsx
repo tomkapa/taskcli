@@ -28,8 +28,8 @@ import { HelpOverlay } from './HelpOverlay.js';
 import { ConfirmDialog } from './ConfirmDialog.js';
 import { DetectedProjectDialog } from './DetectedProjectDialog.js';
 import { DependencyList } from './DependencyList.js';
-import { EpicPanel } from './EpicPanel.js';
-import { EpicPicker } from './EpicPicker.js';
+import { ReleasePanel } from './ReleasePanel.js';
+import { ReleasePicker } from './ReleasePicker.js';
 import { openAllMermaidDiagrams } from './Markdown.js';
 import { ChangelogBanner } from './ChangelogBanner.js';
 import { TabBar } from './TabBar.js';
@@ -56,7 +56,7 @@ const STATUS_CYCLE: TaskStatus[] = [
   TaskStatus.Done,
 ];
 
-const EPIC_PANEL_WIDTH = 48;
+const RELEASE_PANEL_WIDTH = 48;
 
 export function App({ container, initialProject, latestVersion }: Props) {
   const { exit } = useApp();
@@ -77,8 +77,8 @@ export function App({ container, initialProject, latestVersion }: Props) {
 
   // Fixed panel widths so they don't jump when content changes
   const termWidth = stdout.columns > 0 ? stdout.columns : 120;
-  // EpicPanel border adds 2 chars; remaining space split 60/40 between list/detail
-  const remaining = Math.max(0, termWidth - EPIC_PANEL_WIDTH - 2);
+  // ReleasePanel border adds 2 chars; remaining space split 60/40 between list/detail
+  const remaining = Math.max(0, termWidth - RELEASE_PANEL_WIDTH - 2);
   const taskListWidth = Math.floor(remaining * 0.6);
   const taskDetailWidth = remaining - taskListWidth;
 
@@ -98,9 +98,9 @@ export function App({ container, initialProject, latestVersion }: Props) {
     if (!activeProject) return;
     logger.startSpan('TUI.loadTasks', () => {
       const filter = { ...state.filter, level: TaskLevel.Work };
-      // Apply epic filter: when epics are selected, show only their children
-      if (state.selectedEpicIds.size > 0) {
-        filter.parentIds = [...state.selectedEpicIds];
+      // Apply release filter: when releases are selected, show only their children
+      if (state.selectedReleaseIds.size > 0) {
+        filter.parentIds = [...state.selectedReleaseIds];
       }
       const result = container.taskService.listTasks(activeProject, filter);
       if (result.ok) {
@@ -111,17 +111,17 @@ export function App({ container, initialProject, latestVersion }: Props) {
         dispatch({ type: 'FLASH', message: result.error.message, level: 'error' });
       }
     });
-  }, [container, state.filter, state.activeProject, state.selectedEpicIds]);
+  }, [container, state.filter, state.activeProject, state.selectedReleaseIds]);
 
-  const loadEpics = useCallback(() => {
+  const loadReleases = useCallback(() => {
     if (!state.activeProject) return;
     const result = container.taskService.listTasks(state.activeProject, {
-      level: TaskLevel.Epic,
+      level: TaskLevel.Release,
     });
     if (result.ok) {
-      dispatch({ type: 'SET_EPICS', epics: result.value });
+      dispatch({ type: 'SET_RELEASES', releases: result.value });
     } else {
-      logger.error('TUI.loadEpics: failed', result.error);
+      logger.error('TUI.loadReleases: failed', result.error);
     }
   }, [container, state.activeProject]);
 
@@ -155,73 +155,66 @@ export function App({ container, initialProject, latestVersion }: Props) {
           dispatch({ type: 'SELECT_TASK', task: result.value });
         }
         loadTasks();
-        loadEpics();
+        loadReleases();
       } else {
         dispatch({ type: 'FLASH', message: result.error.message, level: 'error' });
       }
     },
-    [container, state.selectedTask, loadTasks, loadEpics],
+    [container, state.selectedTask, loadTasks, loadReleases],
   );
 
-  const saveReorder = useCallback(() => {
-    const activeProject = state.activeProject;
-    if (!activeProject) return;
-    const tasks = state.tasks;
-    const idx = state.selectedIndex;
-    const task = tasks[idx];
-    if (!task) return;
-
-    const prev = tasks[idx - 1];
-    const next = tasks[idx + 1];
-
-    // Use after/before positioning so the service computes the rank
-    const result = prev
-      ? container.taskService.rerankTask({ taskId: task.id, afterId: prev.id }, activeProject)
-      : next
-        ? container.taskService.rerankTask({ taskId: task.id, beforeId: next.id }, activeProject)
-        : container.taskService.rerankTask({ taskId: task.id, position: 1 }, activeProject);
-
-    dispatch({ type: 'EXIT_REORDER', save: result.ok });
-    dispatch({
-      type: 'FLASH',
-      message: result.ok ? 'Rank saved' : result.error.message,
-      level: result.ok ? 'info' : 'error',
-    });
-    loadTasks();
-  }, [container, state.tasks, state.selectedIndex, loadTasks]);
-
-  const saveEpicReorder = useCallback(() => {
-    const activeProject = state.activeProject;
-    if (!activeProject) return;
-    const epics = state.epics;
-    const idx = state.epicSelectedIndex;
-    const epic = epics[idx];
-    if (!epic) return;
-
-    const prev = epics[idx - 1];
-    const next = epics[idx + 1];
-
-    const result = prev
-      ? container.taskService.rerankTask({ taskId: epic.id, afterId: prev.id }, activeProject)
-      : next
-        ? container.taskService.rerankTask({ taskId: epic.id, beforeId: next.id }, activeProject)
-        : container.taskService.rerankTask({ taskId: epic.id, position: 1 }, activeProject);
-
-    dispatch({ type: 'EXIT_EPIC_REORDER', save: result.ok });
-    dispatch({
-      type: 'FLASH',
-      message: result.ok ? 'Epic rank saved' : result.error.message,
-      level: result.ok ? 'info' : 'error',
-    });
-    loadEpics();
-  }, [container, state.epics, state.epicSelectedIndex, loadEpics]);
-
-  const rerankSelectedToEdge = useCallback(
-    (kind: 'task' | 'epic', edge: 'top' | 'bottom') => {
+  const saveCurrentReorder = useCallback(
+    (kind: 'task' | 'release') => {
       const activeProject = state.activeProject;
       if (!activeProject) return;
-      const isEpic = kind === 'epic';
-      const item = isEpic ? state.epics[state.epicSelectedIndex] : state.tasks[state.selectedIndex];
+      const isRelease = kind === 'release';
+      const items = isRelease ? state.releases : state.tasks;
+      const idx = isRelease ? state.releaseSelectedIndex : state.selectedIndex;
+      const item = items[idx];
+      if (!item) return;
+
+      const prev = items[idx - 1];
+      const next = items[idx + 1];
+
+      const result = prev
+        ? container.taskService.rerankTask({ taskId: item.id, afterId: prev.id }, activeProject)
+        : next
+          ? container.taskService.rerankTask({ taskId: item.id, beforeId: next.id }, activeProject)
+          : container.taskService.rerankTask({ taskId: item.id, position: 1 }, activeProject);
+
+      dispatch({ type: isRelease ? 'EXIT_RELEASE_REORDER' : 'EXIT_REORDER', save: result.ok });
+      dispatch({
+        type: 'FLASH',
+        message: result.ok
+          ? isRelease
+            ? 'Release rank saved'
+            : 'Rank saved'
+          : result.error.message,
+        level: result.ok ? 'info' : 'error',
+      });
+      if (isRelease) loadReleases();
+      else loadTasks();
+    },
+    [
+      container,
+      state.tasks,
+      state.selectedIndex,
+      state.releases,
+      state.releaseSelectedIndex,
+      state.activeProject,
+      loadTasks,
+      loadReleases,
+    ],
+  );
+
+  const rerankSelectedToEdge = useCallback(
+    (kind: 'task' | 'release', edge: 'top' | 'bottom') => {
+      const activeProject = state.activeProject;
+      if (!activeProject) return;
+      const isRelease = kind === 'release';
+      const item = isRelease
+        ? state.releases[state.releaseSelectedIndex]
+        : state.tasks[state.selectedIndex];
       if (!item) return;
 
       const result = container.taskService.rerankTask(
@@ -233,25 +226,27 @@ export function App({ container, initialProject, latestVersion }: Props) {
       );
 
       dispatch({
-        type: isEpic ? 'EXIT_EPIC_REORDER' : 'EXIT_REORDER',
+        type: isRelease ? 'EXIT_RELEASE_REORDER' : 'EXIT_REORDER',
         save: result.ok,
       });
       dispatch({
         type: 'FLASH',
-        message: result.ok ? `${isEpic ? 'Epic moved' : 'Moved'} to ${edge}` : result.error.message,
+        message: result.ok
+          ? `${isRelease ? 'Release moved' : 'Moved'} to ${edge}`
+          : result.error.message,
         level: result.ok ? 'info' : 'error',
       });
-      if (isEpic) loadEpics();
+      if (isRelease) loadReleases();
       else loadTasks();
     },
     [
       container,
       state.tasks,
       state.selectedIndex,
-      state.epics,
-      state.epicSelectedIndex,
+      state.releases,
+      state.releaseSelectedIndex,
       loadTasks,
-      loadEpics,
+      loadReleases,
     ],
   );
 
@@ -260,8 +255,8 @@ export function App({ container, initialProject, latestVersion }: Props) {
   const refetchAll = useCallback(() => {
     loadProjects();
     loadTasks();
-    loadEpics();
-  }, [loadProjects, loadTasks, loadEpics]);
+    loadReleases();
+  }, [loadProjects, loadTasks, loadReleases]);
 
   useAutoRefetch(container.dbPath, refetchAll);
 
@@ -333,13 +328,13 @@ export function App({ container, initialProject, latestVersion }: Props) {
     }
   }, [container.updateCachePath]);
 
-  // Reload tasks and epics when project or filter changes
+  // Reload tasks and releases when project or filter changes
   useEffect(() => {
     if (state.activeProject) {
       loadTasks();
-      loadEpics();
+      loadReleases();
     }
-  }, [state.activeProject, state.filter, loadTasks, loadEpics]);
+  }, [state.activeProject, state.filter, loadTasks, loadReleases]);
 
   // Auto-clear flash
   useEffect(() => {
@@ -384,7 +379,7 @@ export function App({ container, initialProject, latestVersion }: Props) {
             dispatch({ type: 'GO_BACK' });
           }
           loadTasks();
-          loadEpics();
+          loadReleases();
         } else {
           dispatch({ type: 'FLASH', message: result.error.message, level: 'error' });
           dispatch({ type: 'CANCEL_DELETE' });
@@ -420,7 +415,7 @@ export function App({ container, initialProject, latestVersion }: Props) {
       state.activeView === ViewType.ProjectCreate ||
       state.activeView === ViewType.ProjectEdit ||
       state.activeView === ViewType.ProjectLink ||
-      state.activeView === ViewType.EpicPicker
+      state.activeView === ViewType.ReleasePicker
     ) {
       return;
     }
@@ -505,7 +500,7 @@ export function App({ container, initialProject, latestVersion }: Props) {
       !state.changelogEntries &&
       !state.detectedGitRemote &&
       !state.isReordering &&
-      !state.isEpicReordering &&
+      !state.isReleaseReordering &&
       !state.isAddingDep;
 
     if (noModal && isRootView) {
@@ -519,31 +514,31 @@ export function App({ container, initialProject, latestVersion }: Props) {
       }
     }
 
-    // Epic reorder mode
-    if (state.isEpicReordering) {
+    // Release reorder mode
+    if (state.isReleaseReordering) {
       if (key.upArrow || input === 'k') {
-        dispatch({ type: 'EPIC_REORDER_MOVE', direction: 'up' });
+        dispatch({ type: 'RELEASE_REORDER_MOVE', direction: 'up' });
         return;
       }
       if (key.downArrow || input === 'j') {
-        dispatch({ type: 'EPIC_REORDER_MOVE', direction: 'down' });
+        dispatch({ type: 'RELEASE_REORDER_MOVE', direction: 'down' });
         return;
       }
       if (input === 't') {
-        rerankSelectedToEdge('epic', 'top');
+        rerankSelectedToEdge('release', 'top');
         return;
       }
       if (input === 'b') {
-        rerankSelectedToEdge('epic', 'bottom');
+        rerankSelectedToEdge('release', 'bottom');
         return;
       }
       if (key.rightArrow) {
-        saveEpicReorder();
+        saveCurrentReorder('release');
         return;
       }
       if (key.escape || key.leftArrow) {
-        dispatch({ type: 'EXIT_EPIC_REORDER', save: false });
-        dispatch({ type: 'FLASH', message: 'Epic reorder cancelled', level: 'info' });
+        dispatch({ type: 'EXIT_RELEASE_REORDER', save: false });
+        dispatch({ type: 'FLASH', message: 'Release reorder cancelled', level: 'info' });
         return;
       }
       return;
@@ -568,7 +563,7 @@ export function App({ container, initialProject, latestVersion }: Props) {
         return;
       }
       if (key.rightArrow) {
-        saveReorder();
+        saveCurrentReorder('task');
         return;
       }
       if (key.escape || key.leftArrow) {
@@ -604,9 +599,9 @@ export function App({ container, initialProject, latestVersion }: Props) {
 
     // Tab / Shift+Tab: cycle panel focus forward or backward
     if (key.tab && state.activeView === ViewType.TaskList) {
-      const panels: Array<'epic' | 'list' | 'detail'> = previewItem
-        ? ['epic', 'list', 'detail']
-        : ['epic', 'list'];
+      const panels: Array<'release' | 'list' | 'detail'> = previewItem
+        ? ['release', 'list', 'detail']
+        : ['release', 'list'];
       const curIdx = panels.indexOf(state.focusedPanel);
       const delta = key.shift ? -1 : 1;
       const nextPanel = panels[(curIdx + delta + panels.length) % panels.length] ?? 'list';
@@ -614,30 +609,30 @@ export function App({ container, initialProject, latestVersion }: Props) {
       return;
     }
 
-    // Task List — epic panel focused
-    if (state.activeView === ViewType.TaskList && state.focusedPanel === 'epic') {
+    // Task List — release panel focused
+    if (state.activeView === ViewType.TaskList && state.focusedPanel === 'release') {
       if (key.upArrow || input === 'k') {
-        dispatch({ type: 'EPIC_MOVE_CURSOR', direction: 'up' });
+        dispatch({ type: 'RELEASE_MOVE_CURSOR', direction: 'up' });
         return;
       }
       if (key.downArrow || input === 'j') {
-        dispatch({ type: 'EPIC_MOVE_CURSOR', direction: 'down' });
+        dispatch({ type: 'RELEASE_MOVE_CURSOR', direction: 'down' });
         return;
       }
       if (input === ' ' || key.return) {
-        const epic = state.epics[state.epicSelectedIndex];
-        if (epic) {
-          dispatch({ type: 'TOGGLE_EPIC', epicId: epic.id });
+        const release = state.releases[state.releaseSelectedIndex];
+        if (release) {
+          dispatch({ type: 'TOGGLE_RELEASE', releaseId: release.id });
         }
         return;
       }
       if (input === '0') {
-        dispatch({ type: 'CLEAR_EPIC_SELECTION' });
+        dispatch({ type: 'CLEAR_RELEASE_SELECTION' });
         return;
       }
       if (key.leftArrow) {
-        if (state.epics.length > 0) {
-          dispatch({ type: 'ENTER_EPIC_REORDER' });
+        if (state.releases.length > 0) {
+          dispatch({ type: 'ENTER_RELEASE_REORDER' });
           dispatch({
             type: 'FLASH',
             message: 'Reorder: ↑↓ move, t top, b bottom, → save, ← cancel',
@@ -719,7 +714,7 @@ export function App({ container, initialProject, latestVersion }: Props) {
         const task = state.tasks[state.selectedIndex];
         if (task) {
           dispatch({ type: 'SELECT_TASK', task });
-          dispatch({ type: 'NAVIGATE_TO', view: ViewType.EpicPicker });
+          dispatch({ type: 'NAVIGATE_TO', view: ViewType.ReleasePicker });
         }
         return;
       }
@@ -728,14 +723,14 @@ export function App({ container, initialProject, latestVersion }: Props) {
         if (task && task.parentId) {
           const result = container.taskService.updateTask(task.id, { parentId: null });
           if (result.ok) {
-            dispatch({ type: 'FLASH', message: 'Unassigned from epic', level: 'info' });
+            dispatch({ type: 'FLASH', message: 'Unassigned from release', level: 'info' });
             loadTasks();
-            loadEpics();
+            loadReleases();
           } else {
             dispatch({ type: 'FLASH', message: result.error.message, level: 'error' });
           }
         } else if (task) {
-          dispatch({ type: 'FLASH', message: 'Task has no epic', level: 'warn' });
+          dispatch({ type: 'FLASH', message: 'Task has no release', level: 'warn' });
         }
         return;
       }
@@ -748,12 +743,12 @@ export function App({ container, initialProject, latestVersion }: Props) {
         dispatch({ type: 'NAVIGATE_TO', view: ViewType.ProjectSelector });
         return;
       }
-      // Left arrow: enter reorder mode (only when no epic filter active)
+      // Left arrow: enter reorder mode (only when no release filter active)
       if (key.leftArrow) {
-        if (state.selectedEpicIds.size > 0) {
+        if (state.selectedReleaseIds.size > 0) {
           dispatch({
             type: 'FLASH',
-            message: 'Clear epic filter (0) before reordering',
+            message: 'Clear release filter (0) before reordering',
             level: 'warn',
           });
           return;
@@ -999,7 +994,7 @@ export function App({ container, initialProject, latestVersion }: Props) {
         loadDeps(taskId);
         dispatch({ type: 'GO_BACK' });
         loadTasks();
-        loadEpics();
+        loadReleases();
       } else {
         if (!state.activeProject) return;
         const result = container.taskService.createTask(data, state.activeProject);
@@ -1007,7 +1002,7 @@ export function App({ container, initialProject, latestVersion }: Props) {
           dispatch({ type: 'FLASH', message: 'Task created', level: 'info' });
           dispatch({ type: 'GO_BACK' });
           loadTasks();
-          loadEpics();
+          loadReleases();
         } else {
           dispatch({ type: 'FLASH', message: result.error.message, level: 'error' });
         }
@@ -1020,7 +1015,7 @@ export function App({ container, initialProject, latestVersion }: Props) {
       state.activeProject,
       loadTasks,
       loadDeps,
-      loadEpics,
+      loadReleases,
     ],
   );
 
@@ -1028,26 +1023,26 @@ export function App({ container, initialProject, latestVersion }: Props) {
     dispatch({ type: 'GO_BACK' });
   }, []);
 
-  const handleEpicPickerSelect = useCallback(
-    (epicId: string | null) => {
+  const handleReleasePickerSelect = useCallback(
+    (releaseId: string | null) => {
       if (!state.selectedTask) return;
       const result = container.taskService.updateTask(state.selectedTask.id, {
-        parentId: epicId,
+        parentId: releaseId,
       });
       if (result.ok) {
-        const msg = epicId ? `Assigned to ${epicId}` : 'Unassigned from epic';
+        const msg = releaseId ? `Assigned to ${releaseId}` : 'Unassigned from release';
         dispatch({ type: 'FLASH', message: msg, level: 'info' });
         loadTasks();
-        loadEpics();
+        loadReleases();
       } else {
         dispatch({ type: 'FLASH', message: result.error.message, level: 'error' });
       }
       dispatch({ type: 'GO_BACK' });
     },
-    [container, state.selectedTask, loadTasks, loadEpics],
+    [container, state.selectedTask, loadTasks, loadReleases],
   );
 
-  const handleEpicPickerCancel = useCallback(() => {
+  const handleReleasePickerCancel = useCallback(() => {
     dispatch({ type: 'GO_BACK' });
   }, []);
 
@@ -1206,8 +1201,8 @@ export function App({ container, initialProject, latestVersion }: Props) {
   }, []);
 
   const previewItem: Task | null =
-    state.focusedPanel === 'epic'
-      ? (state.epics[state.epicSelectedIndex] ?? null)
+    state.focusedPanel === 'release'
+      ? (state.releases[state.releaseSelectedIndex] ?? null)
       : (state.tasks[state.selectedIndex] ?? null);
 
   // Derive initial deps for the edit form from the already-loaded dep state.
@@ -1276,12 +1271,12 @@ export function App({ container, initialProject, latestVersion }: Props) {
               <DetectedProjectDialog remote={state.detectedGitRemote} />
             ) : (
               <Box flexDirection="row" flexGrow={1}>
-                <EpicPanel
-                  epics={state.epics}
-                  selectedIndex={state.epicSelectedIndex}
-                  selectedEpicIds={state.selectedEpicIds}
-                  isFocused={state.focusedPanel === 'epic'}
-                  isReordering={state.isEpicReordering}
+                <ReleasePanel
+                  releases={state.releases}
+                  selectedIndex={state.releaseSelectedIndex}
+                  selectedReleaseIds={state.selectedReleaseIds}
+                  isFocused={state.focusedPanel === 'release'}
+                  isReordering={state.isReleaseReordering}
                 />
                 <Box width={taskListWidth}>
                   <TaskList
@@ -1308,7 +1303,7 @@ export function App({ container, initialProject, latestVersion }: Props) {
                     }
                     isSelectedBlocked={state.depBlockers.some((t) => !isTerminalStatus(t.status))}
                     isFocused={state.focusedPanel === 'list'}
-                    epicFilterActive={state.selectedEpicIds.size > 0}
+                    releaseFilterActive={state.selectedReleaseIds.size > 0}
                   />
                 </Box>
                 <Box width={taskDetailWidth}>
@@ -1387,13 +1382,13 @@ export function App({ container, initialProject, latestVersion }: Props) {
             )}
 
           {!state.confirmDelete &&
-            state.activeView === ViewType.EpicPicker &&
+            state.activeView === ViewType.ReleasePicker &&
             state.selectedTask && (
-              <EpicPicker
-                epics={state.epics}
-                currentEpicId={state.selectedTask.parentId}
-                onSelect={handleEpicPickerSelect}
-                onCancel={handleEpicPickerCancel}
+              <ReleasePicker
+                releases={state.releases}
+                currentReleaseId={state.selectedTask.parentId}
+                onSelect={handleReleasePickerSelect}
+                onCancel={handleReleasePickerCancel}
               />
             )}
 

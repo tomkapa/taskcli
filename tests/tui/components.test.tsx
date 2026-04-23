@@ -935,10 +935,10 @@ describe('TUI Component Rendering', () => {
     });
 
     it('renders epic reorder hints when epic reordering', () => {
-      const state = { ...initialState, isEpicReordering: true };
+      const state = { ...initialState, isReleaseReordering: true };
       const { lastFrame } = render(<Header state={state} />);
       const frame = lastFrame() ?? '';
-      expect(frame).toContain('move epic');
+      expect(frame).toContain('move release');
       expect(frame).toContain('save');
       expect(frame).toContain('cancel');
     });
@@ -1065,7 +1065,7 @@ describe('TUI Component Rendering', () => {
       expect(frame).toContain('ACTIONS');
       expect(frame).toContain('REORDER');
       expect(frame).toContain('FILTER');
-      expect(frame).toContain('EPIC PANEL');
+      expect(frame).toContain('RELEASE PANEL');
       expect(frame).toContain('DEPS VIEW');
       expect(frame).toContain('FORMS');
       expect(frame).toContain('GENERAL');
@@ -1093,7 +1093,7 @@ describe('TUI Component Rendering', () => {
       const { lastFrame } = render(<HelpOverlay />);
       const frame = lastFrame() ?? '';
       expect(frame).toContain('Toggle filter');
-      expect(frame).toContain('Reorder epics');
+      expect(frame).toContain('Reorder releases');
     });
   });
 

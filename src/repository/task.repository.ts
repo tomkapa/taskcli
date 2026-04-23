@@ -61,7 +61,7 @@ export class SqliteTaskRepository implements TaskRepository {
         const level = getTaskLevel(input.type);
 
         // New tasks go after the last active task but before terminal (done/cancelled) tasks
-        // within the same level (epics rank among epics, work items among work items).
+        // within the same level (releases rank among releases, work items among work items).
         const rankResult = this.computeInsertRank(input.projectId, level);
         if (!rankResult.ok) return rankResult;
         const rank = rankResult.value;
@@ -332,7 +332,7 @@ export class SqliteTaskRepository implements TaskRepository {
   }
 
   private getTypesForLevel(level: TaskLevel): string[] {
-    if (level === 1) return ['epic'];
+    if (level === 1) return ['release'];
     return [...WORK_TYPES];
   }
 

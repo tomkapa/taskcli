@@ -85,7 +85,7 @@ describe('PortabilityService.exportTasks', () => {
   });
 
   it('includes parentId in exported tasks', () => {
-    const parent = container.taskService.createTask({ name: 'Parent', type: 'epic' }, project);
+    const parent = container.taskService.createTask({ name: 'Parent', type: 'release' }, project);
     if (!parent.ok) throw new Error('setup failed');
 
     container.taskService.createTask({ name: 'Child', parentId: parent.value.id }, project);
@@ -216,7 +216,7 @@ describe('PortabilityService.importTasks', () => {
   it('handles parentId remapping within import set', () => {
     const data = {
       tasks: [
-        { id: 'EXT-1', name: 'Parent', type: 'epic' },
+        { id: 'EXT-1', name: 'Parent', type: 'release' },
         { id: 'EXT-2', name: 'Child', parentId: 'EXT-1' },
       ],
     };
@@ -237,7 +237,7 @@ describe('PortabilityService.importTasks', () => {
     // Multi-level nesting (grandparent->child->grandchild) requires epic parent.
     const data = {
       tasks: [
-        { id: 'A', name: 'Epic Parent', type: 'epic' },
+        { id: 'A', name: 'Epic Parent', type: 'release' },
         { id: 'B', name: 'Child Story', parentId: 'A' },
       ],
     };

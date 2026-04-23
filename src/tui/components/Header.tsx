@@ -11,8 +11,14 @@ interface KeyHint {
 }
 
 function getKeyHints(state: AppState): KeyHint[] {
-  const { activeView, isSearchActive, isReordering, isEpicReordering, isAddingDep, focusedPanel } =
-    state;
+  const {
+    activeView,
+    isSearchActive,
+    isReordering,
+    isReleaseReordering,
+    isAddingDep,
+    focusedPanel,
+  } = state;
 
   if (state.changelogDialogOpen) {
     return [
@@ -37,7 +43,7 @@ function getKeyHints(state: AppState): KeyHint[] {
   ];
 
   if (isReordering) return [{ key: '↑/↓', desc: 'move' }, ...REORDER_SUFFIX];
-  if (isEpicReordering) return [{ key: '↑/↓', desc: 'move epic' }, ...REORDER_SUFFIX];
+  if (isReleaseReordering) return [{ key: '↑/↓', desc: 'move release' }, ...REORDER_SUFFIX];
 
   if (isSearchActive) {
     return [
@@ -47,7 +53,7 @@ function getKeyHints(state: AppState): KeyHint[] {
     ];
   }
 
-  if (activeView === ViewType.TaskList && focusedPanel === 'epic') {
+  if (activeView === ViewType.TaskList && focusedPanel === 'release') {
     return [
       { key: 'j/k', desc: 'nav' },
       { key: 'space', desc: 'toggle' },
@@ -144,7 +150,7 @@ function getKeyHints(state: AppState): KeyHint[] {
     ];
   }
 
-  if (activeView === ViewType.EpicPicker) {
+  if (activeView === ViewType.ReleasePicker) {
     return [
       { key: 'j/k', desc: 'nav' },
       { key: 'enter', desc: 'select' },

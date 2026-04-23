@@ -17,7 +17,7 @@ export const STATUS_COLOR: Record<string, string> = {
 };
 
 export const TYPE_COLOR: Record<string, string> = {
-  [TaskType.Epic]: theme.status.modified,
+  [TaskType.Release]: theme.status.modified,
   [TaskType.Story]: theme.status.highlight,
   [TaskType.TechDebt]: theme.status.pending,
   [TaskType.Bug]: theme.status.error,

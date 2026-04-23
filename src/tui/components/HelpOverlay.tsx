@@ -55,12 +55,12 @@ const ROW1: Section[] = [
 
 const ROW2: Section[] = [
   {
-    title: 'EPIC PANEL',
+    title: 'RELEASE PANEL',
     keys: [
       ['j/k', 'Navigate'],
       ['space', 'Toggle filter'],
       ['0', 'Clear filter'],
-      ['←', 'Reorder epics'],
+      ['←', 'Reorder releases'],
     ],
   },
   {

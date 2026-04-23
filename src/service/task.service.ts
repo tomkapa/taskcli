@@ -49,9 +49,9 @@ export class TaskServiceImpl implements TaskService {
 
       const taskLevel = getTaskLevel(parsed.data.type);
 
-      // Epics (level 1) cannot have a parent
-      if (taskLevel === TaskLevel.Epic && parsed.data.parentId) {
-        return err(new AppError('VALIDATION', 'Epic tasks cannot have a parent'));
+      // Releases (level 1) cannot have a parent
+      if (taskLevel === TaskLevel.Release && parsed.data.parentId) {
+        return err(new AppError('VALIDATION', 'Release tasks cannot have a parent'));
       }
 
       if (parsed.data.parentId) {
@@ -60,9 +60,11 @@ export class TaskServiceImpl implements TaskService {
         if (!parentResult.value) {
           return err(new AppError('NOT_FOUND', `Parent task not found: ${parsed.data.parentId}`));
         }
-        // Level 2 tasks can only be children of level 1 (epic) tasks
-        if (getTaskLevel(parentResult.value.type) !== TaskLevel.Epic) {
-          return err(new AppError('VALIDATION', 'Tasks can only be children of epic-level tasks'));
+        // Level 2 tasks can only be children of level 1 (release) tasks
+        if (getTaskLevel(parentResult.value.type) !== TaskLevel.Release) {
+          return err(
+            new AppError('VALIDATION', 'Tasks can only be children of release-level tasks'),
+          );
         }
       }
 
@@ -148,8 +150,8 @@ export class TaskServiceImpl implements TaskService {
         const oldLevel = getTaskLevel(existing.type);
 
         if (newLevel !== oldLevel) {
-          // Changing from epic to work: reject if it has children
-          if (oldLevel === TaskLevel.Epic) {
+          // Changing from release to work: reject if it has children
+          if (oldLevel === TaskLevel.Release) {
             const childrenResult = this.repo.findMany({
               projectId: existing.projectId,
               parentId: id,
@@ -158,14 +160,16 @@ export class TaskServiceImpl implements TaskService {
               return err(
                 new AppError(
                   'VALIDATION',
-                  'Cannot change type from epic: task has children. Remove children first.',
+                  'Cannot change type from release: task has children. Remove children first.',
                 ),
               );
             }
           }
-          // Changing to epic: reject if it has a parent
-          if (newLevel === TaskLevel.Epic && existing.parentId) {
-            return err(new AppError('VALIDATION', 'Cannot change type to epic: task has a parent'));
+          // Changing to release: reject if it has a parent
+          if (newLevel === TaskLevel.Release && existing.parentId) {
+            return err(
+              new AppError('VALIDATION', 'Cannot change type to release: task has a parent'),
+            );
           }
         }
       }
@@ -175,8 +179,8 @@ export class TaskServiceImpl implements TaskService {
         const effectiveType = parsed.data.type ?? existing.type;
         const effectiveLevel = getTaskLevel(effectiveType);
 
-        if (effectiveLevel === TaskLevel.Epic && parsed.data.parentId) {
-          return err(new AppError('VALIDATION', 'Epic tasks cannot have a parent'));
+        if (effectiveLevel === TaskLevel.Release && parsed.data.parentId) {
+          return err(new AppError('VALIDATION', 'Release tasks cannot have a parent'));
         }
         if (parsed.data.parentId) {
           const parentResult = this.repo.findById(parsed.data.parentId);
@@ -184,9 +188,9 @@ export class TaskServiceImpl implements TaskService {
           if (!parentResult.value) {
             return err(new AppError('NOT_FOUND', `Parent task not found: ${parsed.data.parentId}`));
           }
-          if (getTaskLevel(parentResult.value.type) !== TaskLevel.Epic) {
+          if (getTaskLevel(parentResult.value.type) !== TaskLevel.Release) {
             return err(
-              new AppError('VALIDATION', 'Tasks can only be children of epic-level tasks'),
+              new AppError('VALIDATION', 'Tasks can only be children of release-level tasks'),
             );
           }
         }
@@ -239,9 +243,9 @@ export class TaskServiceImpl implements TaskService {
 
       const parent = parentResult.value;
 
-      // Parent must be an epic (level 1) to have children
-      if (getTaskLevel(parent.type) !== TaskLevel.Epic) {
-        return err(new AppError('VALIDATION', 'Breakdown parent must be an epic-level task'));
+      // Parent must be a release (level 1) to have children
+      if (getTaskLevel(parent.type) !== TaskLevel.Release) {
+        return err(new AppError('VALIDATION', 'Breakdown parent must be a release-level task'));
       }
 
       const projectResult = this.projectService.getProject(parent.projectId);
@@ -257,8 +261,10 @@ export class TaskServiceImpl implements TaskService {
         }
 
         // Subtasks must be level 2 (work items)
-        if (getTaskLevel(parsed.data.type) === TaskLevel.Epic) {
-          return err(new AppError('VALIDATION', `Subtask "${parsed.data.name}" cannot be an epic`));
+        if (getTaskLevel(parsed.data.type) === TaskLevel.Release) {
+          return err(
+            new AppError('VALIDATION', `Subtask "${parsed.data.name}" cannot be a release`),
+          );
         }
 
         const taskIdResult = this.projectService.nextTaskId(project);
