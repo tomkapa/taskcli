@@ -1305,6 +1305,7 @@ export function App({ container, initialProject, latestVersion }: Props) {
                     isSelectedBlocked={state.depBlockers.some((t) => !isTerminalStatus(t.status))}
                     isFocused={state.focusedPanel === 'list'}
                     releaseFilterActive={state.selectedReleaseIds.size > 0}
+                    width={taskListWidth}
                   />
                 </Box>
                 <Box width={taskDetailWidth}>
