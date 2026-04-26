@@ -7,6 +7,8 @@ import { renderMarkdown, MermaidHint } from './Markdown.js';
 
 interface Props {
   task: Task;
+  parentTask?: Task | null;
+  panelWidth?: number;
   blockers?: Task[];
   dependents?: Task[];
   related?: Task[];
@@ -30,6 +32,38 @@ function sectionHeader(title: string): string {
   return PAD + chalk.hex(theme.title).bold(`--- ${title} ---`);
 }
 
+function wrapWords(text: string, maxWidth: number): string[] {
+  if (maxWidth <= 0 || text.length <= maxWidth) return [text];
+  const words = text.split(' ');
+  const out: string[] = [];
+  let line = '';
+  for (const word of words) {
+    if (line.length === 0) {
+      line = word;
+    } else if (line.length + 1 + word.length <= maxWidth) {
+      line += ' ' + word;
+    } else {
+      out.push(line);
+      line = word;
+    }
+  }
+  if (line.length > 0) out.push(line);
+  return out.length > 0 ? out : [''];
+}
+
+/** Pre-wrap a name value into colored lines, one per contentLines entry. */
+function buildNameLines(name: string, panelWidth: number): string[] {
+  const label = 'name';
+  // panelWidth includes the Box's two border chars
+  const LABEL_PREFIX_LEN = PAD.length + label.length + 2; // ' name: '
+  const valueWidth = Math.max(10, panelWidth - 2 - LABEL_PREFIX_LEN);
+  const indent = ' '.repeat(LABEL_PREFIX_LEN);
+  const prefix =
+    PAD + chalk.hex(theme.yaml.key).bold(label) + chalk.hex(theme.yaml.colon)(': ');
+  const segments = name.split('\n').flatMap((seg) => wrapWords(seg, valueWidth));
+  return segments.map((seg, i) => (i === 0 ? prefix : indent) + chalk.hex(theme.titleHighlight).bold(seg));
+}
+
 function markdownLines(content: string): string[] {
   const rendered = renderMarkdown(content);
   if (!rendered) return [];
@@ -39,6 +73,8 @@ function markdownLines(content: string): string[] {
 /** Build the full detail content as an array of pre-formatted text lines. */
 function buildContentLines(
   task: Task,
+  parentTask: Task | null | undefined,
+  panelWidth: number,
   blockers: Task[],
   dependents: Task[],
   related: Task[],
@@ -48,12 +84,15 @@ function buildContentLines(
 
   // Metadata
   lines.push(field('id', task.id));
-  lines.push(field('name', task.name));
+  lines.push(...buildNameLines(task.name, panelWidth));
   lines.push(field('type', task.type));
   lines.push(field('status', task.status));
   lines.push(field('created', new Date(task.createdAt).toLocaleString()));
   lines.push(field('updated', new Date(task.updatedAt).toLocaleString()));
-  if (task.parentId) lines.push(field('parent', task.parentId));
+  if (task.parentId) {
+    const parentLabel = parentTask ? parentTask.name : task.parentId;
+    lines.push(field('release', parentLabel));
+  }
 
   // Dependencies
   const hasDeps =
@@ -119,6 +158,8 @@ const CHROME_LINES = 8;
 
 export function TaskDetail({
   task,
+  parentTask,
+  panelWidth,
   blockers = [],
   dependents = [],
   related = [],
@@ -128,10 +169,11 @@ export function TaskDetail({
 }: Props) {
   const { stdout } = useStdout();
   const allText = `${task.description}\n${task.technicalNotes}\n${task.additionalRequirements}`;
+  const resolvedWidth = panelWidth ?? (stdout.columns > 0 ? stdout.columns : 120);
 
   const contentLines = useMemo(
-    () => buildContentLines(task, blockers, dependents, related, duplicates),
-    [task, blockers, dependents, related, duplicates],
+    () => buildContentLines(task, parentTask, resolvedWidth, blockers, dependents, related, duplicates),
+    [task, parentTask, resolvedWidth, blockers, dependents, related, duplicates],
   );
 
   const viewportHeight = Math.max(1, (stdout.rows > 0 ? stdout.rows : 24) - CHROME_LINES);

@@ -138,7 +138,7 @@ export function TaskList({
         ) : (
           visibleTasks.map((task, i) => {
             const actualIndex = viewStart + i;
-            const isSelected = actualIndex === selectedIndex;
+            const isSelected = actualIndex === selectedIndex && isFocused;
             const isNonTerminalBlocker = nonTerminalBlockerIds.has(task.id);
             const isNonTerminalDependent = nonTerminalDependentIds.has(task.id);
             const rowColor = STATUS_COLOR[task.status] ?? theme.table.fg;

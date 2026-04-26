@@ -620,10 +620,19 @@ export function App({ container, initialProject, latestVersion }: Props) {
         dispatch({ type: 'RELEASE_MOVE_CURSOR', direction: 'down' });
         return;
       }
-      if (input === ' ' || key.return) {
+      if (input === ' ') {
         const release = state.releases[state.releaseSelectedIndex];
         if (release) {
           dispatch({ type: 'TOGGLE_RELEASE', releaseId: release.id });
+        }
+        return;
+      }
+      if (key.return) {
+        const release = state.releases[state.releaseSelectedIndex];
+        if (release) {
+          dispatch({ type: 'SELECT_TASK', task: release });
+          loadDeps(release.id);
+          dispatch({ type: 'NAVIGATE_TO', view: ViewType.TaskDetail });
         }
         return;
       }
@@ -1316,6 +1325,8 @@ export function App({ container, initialProject, latestVersion }: Props) {
                   {previewItem ? (
                     <TaskDetail
                       task={previewItem}
+                      parentTask={state.releases.find((r) => r.id === previewItem.parentId) ?? null}
+                      panelWidth={taskDetailWidth}
                       blockers={state.depBlockers}
                       dependents={state.depDependents}
                       related={state.depRelated}
@@ -1350,6 +1361,8 @@ export function App({ container, initialProject, latestVersion }: Props) {
             state.selectedTask && (
               <TaskDetail
                 task={state.selectedTask}
+                parentTask={state.releases.find((r) => r.id === state.selectedTask.parentId) ?? null}
+                panelWidth={termWidth}
                 blockers={state.depBlockers}
                 dependents={state.depDependents}
                 related={state.depRelated}
